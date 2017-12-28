@@ -106,7 +106,7 @@ void read_body(int sockfd, google::protobuf::uint32 siz) {
   payload.ParseFromCodedStream(&coded_input);
   coded_input.PopLimit(msgLimit);
 
-  cout << "Message is " << payload.DebugString();
+  cout << "Message received: " << payload.DebugString() << endl;
 }
 
 void send_msg(int sockfd, req_envelope* envelope) {
@@ -124,6 +124,7 @@ void send_msg(int sockfd, req_envelope* envelope) {
         //exit(1);
     }
     //printf("Sent bytes %d\n", numbytes);
+	  cout << "Message sent: " << envelope->DebugString() << endl;
 }
 
 google::protobuf::uint32 read_header(char *buf)
@@ -140,6 +141,19 @@ int get_random(int limit) {
 	  return (rand() % limit) + 1;
 }
 
+void rand_string(char *str, size_t size) {
+    const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJK";
+    if (size) {
+        --size;
+        for (size_t n = 0; n < size; n++) {
+            int key = rand() % (int) (sizeof charset - 1);
+            str[n] = charset[key];
+        }
+        str[size] = '\0';
+    }
+    return;
+}
+
 void print_usage() {
     printf("Usage:\n");
 		printf("\t-h <host> \t AWS hostname\n");
@@ -148,7 +162,7 @@ void print_usage() {
 		printf("\t-g        \t get_request get a item from dynamodb spefic -k \n");
 		printf("\t-k <key>  \t key is required with option -s or -g\n");
 		printf("\t-v <value>\t value is required with option -g\n");
-		printf("\t-t 	      \t teste mode set_request and get_request in loop with random data\n");
+		printf("\t-t 	      \t test mode set_request and get_request in loop with random data interval 5s\n");
 		exit(1);
 }
 
@@ -165,6 +179,8 @@ int main(int argc, char** argv) {
 		char *hostname = NULL;
 		char *key_item = NULL;
 		char *value_item = NULL;
+
+	  srand(time(NULL));
 
     while ((option = getopt(argc, argv,"h:p:sgk:v:tb")) != -1) {
         switch (option) {
@@ -239,25 +255,28 @@ int main(int argc, char** argv) {
 				getRequest(fd, key);
 		} else if (test_mode) {
 		    int kidx;
-		    int vidx;
 				int swap = 0;
-		    while (1) {
-		        printf("connected!\n");
+				char svalue[64];
 
+		    while (1) {
+						cout << "#####################################" << endl;
 						srand(time(NULL) + get_random(1234));
-		        kidx = get_random(1000);
-		        vidx = get_random(1000);
+		        kidx = get_random(100000);
+
+						rand_string(svalue, 64);
 
 		        std::string key = std::to_string(kidx);
-		        std::string value = string(argv[1]) + "_sdFGHJKLIUYTRDSDCFVGHJKUYTFDCVBNMKUYTFVBNMKJHGFVBNMKJH";
+		        std::string value = svalue;
 
             if (burst_mode)
 		            sleep(get_random(30));
 		        if (!burst_mode || (burst_mode && (swap++ == 5))) {
-		            printf("send first message: %s\n", key.c_str());
+		            //printf("send first message: %s\n", key.c_str());
 		            setRequest(fd, key, value);
                 if (burst_mode)
 								    sleep(get_random(60));
+								else
+										sleep(1);
 								swap = 0;
 		        }
 
@@ -265,6 +284,8 @@ int main(int argc, char** argv) {
 
             if (burst_mode)
 		            sleep(get_random(60));
+						else
+								sleep(10);
 				}
 		}
     close(fd);
