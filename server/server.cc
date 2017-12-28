@@ -58,6 +58,8 @@ using std::string;
 
 #define HEADER_SIZE 4
 
+int DEBUG_MODE = 0;
+
 enum msg_type_t {
     unknown,
     set,
@@ -308,7 +310,8 @@ class Message
         payload.ParseFromCodedStream(&coded_input);
         coded_input.PopLimit(msgLimit);
 
-        //cout << "Message is " << payload.DebugString() << endl;
+        if (DEBUG_MODE)
+            cout << "Message is " << payload.DebugString() << endl;
 
         m_envelope = new kv::proto::req_envelope();
         m_envelope->CopyFrom(payload);
@@ -484,7 +487,8 @@ class Message
         coded_output->WriteVarint32(envelope->ByteSize());
         envelope->SerializeToCodedStream(coded_output);
 
-        //cout << "Response is : " << envelope->DebugString();
+        if (DEBUG_MODE)
+            cout << "Response is : " << envelope->DebugString();
 
         m_stream->send(pkt, len);
 
@@ -668,6 +672,11 @@ int main(int argc, char** argv)
         printf("\texport AWS_DEFAULT_REGION=<AWS DEFAULT REGION>\n");
         printf("\texport AWS_ARN_ENCRYPT_KEY=<AWS ARN ENCRYPT KEY>\n");
         exit(1);
+    }
+
+    if (getenv("DEBUG_MODE")) {
+        printf("Mode debug!\n");
+        DEBUG_MODE=1;
     }
 
     if ( argc < 2 || argc > 3 ) {
