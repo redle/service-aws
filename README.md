@@ -1,9 +1,9 @@
 # README #
 
 ### Requirements ###
-  Debian 9.3
-  AWS SDK
-  Google Protobuff
+  - Debian 9.3
+  - AWS SDK
+  - Google Protobuff
 
 ### Compile ###
   make
