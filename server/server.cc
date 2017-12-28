@@ -138,7 +138,6 @@ class Database
         m_awsClient = awsClient;
         m_table = "data";
         char *env_arnkey = getenv("AWS_ARN_ENCRYPT_KEY");
-        //m_keyid = "arn:aws:kms:sa-east-1:813614406545:key/67c05a98-3c86-40b3-81ab-0e330d38a7d2";
         m_keyid = env_arnkey;
         m_dynamoClient = new Aws::DynamoDB::DynamoDBClient(m_awsClient->getClientConfig());
         m_kmsClient =  new Aws::KMS::KMSClient(m_awsClient->getClientConfig());
@@ -635,12 +634,12 @@ class ConnectionSingleHandler : public Thread
 
   public:
     ConnectionSingleHandler(TCPStream* stream) : m_stream(stream) {
-        printf("Create MessageHandler\n");
+        //printf("Create MessageHandler\n");
     }
 
     void* run() {
         MessageHandler msg_handler(m_stream);
-printf("MessageHandler run\n");
+//printf("MessageHandler run\n");
         int err;
         while (1) {
             //printf("thread %lu - waiting for data...\n", (long unsigned int)self());
