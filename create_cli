@@ -1,0 +1,9 @@
+#!/bin/sh
+
+AWS_HOST=52.67.158.82
+
+for CLI in `seq 1 $1`; do
+    echo "Creating client $CLI"
+    ./client_test -h $AWS_HOST -t -b 2>> log_error 1> /dev/null &
+    sleep .100
+done
