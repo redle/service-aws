@@ -37,6 +37,7 @@ class TCPStream
     int     m_sd;
     string  m_peerIP;
     int     m_peerPort;
+		int     m_state;
 
   public:
     friend class TCPAcceptor;
@@ -49,9 +50,13 @@ class TCPStream
 
     bool waitForReadEvent(int timeout);
     string getPeerIP();
-    int    getPeerPort();
+    int getPeerPort();
+    int getSD();
+		int setState(int );
+		int getState();
 
     enum {
+        connectionConnected = 1,
         connectionClosed = 0,
         connectionReset = -1,
         connectionTimedOut = -2

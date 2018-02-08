@@ -49,6 +49,7 @@ template <typename T> class wqueue
         m_queue.push_back(item);
         pthread_cond_signal(&m_condv);
         pthread_mutex_unlock(&m_mutex);
+				printf(">>>>> queue: %li\n", m_queue.size());
     }
     T remove() {
         pthread_mutex_lock(&m_mutex);

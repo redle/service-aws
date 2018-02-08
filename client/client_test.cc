@@ -186,7 +186,7 @@ int main(int argc, char** argv) {
         switch (option) {
              case 'h' : hostname = optarg;
                  break;
-             case 'p' : port = 0;
+             case 'p' : port = atoi(optarg);
                  break;
              case 's' : set_mode = 1;
                  break;
@@ -268,23 +268,23 @@ int main(int argc, char** argv) {
 		        std::string key = std::to_string(kidx);
 		        std::string value = svalue;
 
-            if (burst_mode)
-		            sleep(get_random(30));
-		        if (!burst_mode || (burst_mode && (swap++ == 5))) {
+            //if (burst_mode)
+		            //sleep(get_random(30));
+		        //if (!burst_mode || (burst_mode && (swap++ == 5))) {
 		            //printf("send first message: %s\n", key.c_str());
 		            setRequest(fd, key, value);
-                if (burst_mode)
-								    sleep(get_random(60));
-								else
-										sleep(1);
-								swap = 0;
-		        }
+                //if (burst_mode)
+								//    sleep(get_random(60));
+								//else
+								//		sleep(1);
+								//swap = 0;
+		        //}
 
 		        getRequest(fd, key);
 
-            if (burst_mode)
-		            sleep(get_random(60));
-						else
+            //if (burst_mode)
+		        //    sleep(get_random(60));
+						//else
 								sleep(10);
 				}
 		}

@@ -42,7 +42,7 @@ int TCPAcceptor::start()
         return 0;
     }
 
-    m_lsd = socket(PF_INET, SOCK_STREAM, 0);
+    m_lsd = socket(PF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
     struct sockaddr_in address;
 
     memset(&address, 0, sizeof(address));
@@ -73,10 +73,10 @@ int TCPAcceptor::start()
     return result;
 }
 
-TCPStream* TCPAcceptor::accept()
+int TCPAcceptor::accept(TCPStream*& m_stream)
 {
     if (m_listening == false) {
-        return NULL;
+        return -1;
     }
 
     struct sockaddr_in address;
@@ -84,8 +84,16 @@ TCPStream* TCPAcceptor::accept()
     memset(&address, 0, sizeof(address));
     int sd = ::accept(m_lsd, (struct sockaddr*)&address, &len);
     if (sd < 0) {
+
+        if ((errno == EWOULDBLOCK) || (errno == EAGAIN)) {
+            return 0;
+        }
+
         perror("accept() failed");
-        return NULL;
+        return -1;
     }
-    return new TCPStream(sd, &address);
+
+    m_stream = new TCPStream(sd, &address);
+
+    return sd;
 }

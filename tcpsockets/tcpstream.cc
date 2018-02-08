@@ -28,6 +28,7 @@ TCPStream::TCPStream(int sd, struct sockaddr_in* address) : m_sd(sd) {
     inet_ntop(PF_INET, (struct in_addr*)&(address->sin_addr.s_addr), ip, sizeof(ip)-1);
     m_peerIP = ip;
     m_peerPort = ntohs(address->sin_port);
+    m_state = connectionConnected;
 }
 
 TCPStream::~TCPStream()
@@ -83,4 +84,17 @@ bool TCPStream::waitForReadEvent(int timeout)
         return true;
     }
     return false;
+}
+
+int TCPStream::getSD()
+{
+    return m_sd;
+}
+
+int	TCPStream::setState(int state) {
+    m_state = state;
+}
+
+int	TCPStream::getState() {
+    return m_state;
 }

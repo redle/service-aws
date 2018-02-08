@@ -24,589 +24,53 @@
 #include <stdlib.h>
 #include <string>
 #include <iostream>
+#include <list>
+#include <utility>
 #include <getopt.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <poll.h>
+
 #include "thread.h"
 #include "wqueue.h"
 #include "tcpacceptor.h"
+#include "message.h"
 
 using std::cout;
 using std::endl;
 using std::string;
 
-#include <google/protobuf/io/coded_stream.h>
-#include <google/protobuf/io/zero_copy_stream_impl.h>
-
-#include "kv.proto.pb.h"
-
-#include <aws/core/Aws.h>
-#include <aws/core/utils/Outcome.h>
-#include <aws/dynamodb/DynamoDBClient.h>
-#include <aws/dynamodb/model/ListTablesRequest.h>
-#include <aws/dynamodb/model/ListTablesResult.h>
-#include <aws/dynamodb/model/AttributeDefinition.h>
-#include <aws/dynamodb/model/PutItemRequest.h>
-#include <aws/dynamodb/model/PutItemResult.h>
-#include <aws/dynamodb/model/GetItemRequest.h>
 #include <iostream>
 
-#include <aws/kms/KMSClient.h>
-#include <aws/kms/model/EncryptRequest.h>
-#include <aws/kms/model/EncryptResult.h>
-#include <aws/kms/model/DecryptRequest.h>
-#include <aws/kms/model/DecryptResult.h>
-#include <aws/kms/KMSErrors.h>
-
-#define HEADER_SIZE 4
-
 int DEBUG_MODE = 0;
-
-enum msg_type_t {
-    unknown,
-    set,
-    get
-};
-typedef msg_type_t msg_type;
-
-enum msg_error_t {
-    ok,
-    fail,
-    not_found
-};
-typedef msg_error_t msg_error;
-
-typedef struct {
-    std::string key;
-    std::string value;
-} msg_data;
-
-class Data
-{
-    std::string m_key;
-    std::string m_value;
-  public:
-    Data(): m_key(""), m_value("") {}
-    Data(std::string key, std::string value) {
-        m_key = key;
-        m_value = value;
-    }
-    ~Data() {}
-    std::string getKey() {
-        return m_key;
-    }
-    void setKey(std::string key) {
-        m_key = key;
-    }
-    std::string getValue() {
-        return m_value;
-    }
-    void setValue(std::string value) {
-        m_value = value;
-    }
-};
-
-class AwsClient
-{
-    Aws::Client::ClientConfiguration m_clientConfig;
-    Aws::String m_region;
-    Aws::SDKOptions m_options;
-  public:
-    AwsClient(std::string region): m_region(region.c_str()) {
-        Aws::InitAPI(m_options);
-        m_clientConfig.region = m_region;
-    };
-    AwsClient() {
-        Aws::InitAPI(m_options);
-        char *env_region = getenv("AWS_DEFAULT_REGION");
-        m_region = env_region;
-        m_clientConfig.region = m_region;
-    };
-    ~AwsClient() {
-        Aws::ShutdownAPI(m_options);
-    }
-    Aws::Client::ClientConfiguration getClientConfig() {
-        return m_clientConfig;
-    }
-};
-
-class Database
-{
-    AwsClient *m_awsClient;
-    Aws::DynamoDB::DynamoDBClient* m_dynamoClient;
-    Aws::KMS::KMSClient* m_kmsClient;
-    std::string m_table;
-    std::string m_keyid;
-  public:
-    Database(AwsClient* awsClient) {
-        m_awsClient = awsClient;
-        m_table = "data";
-        char *env_arnkey = getenv("AWS_ARN_ENCRYPT_KEY");
-        m_keyid = env_arnkey;
-        m_dynamoClient = new Aws::DynamoDB::DynamoDBClient(m_awsClient->getClientConfig());
-        m_kmsClient =  new Aws::KMS::KMSClient(m_awsClient->getClientConfig());
-    }
-    ~Database() {
-        delete m_dynamoClient;
-        delete m_kmsClient;
-    }
-
-		void encrypt(std::string plainText, Aws::Utils::ByteBuffer& cipherText) {
-#if 0
-				printf(">>>> (%li)", plainText.length());
-		    for (unsigned i = 0; i < plainText.length(); ++i) {
-						printf("%02x ", (unsigned char) plainText[i]);
-				}
-				printf("\n");
-#endif
-				Aws::Utils::ByteBuffer message((unsigned char*) plainText.c_str(), plainText.length());
-
-        Aws::KMS::Model::EncryptRequest encryptRequest;
-        encryptRequest.SetKeyId(m_keyid.c_str());
-        encryptRequest.SetPlaintext(message);
-
-        Aws::KMS::Model::EncryptOutcome output;
-        output = m_kmsClient->Encrypt(encryptRequest);
-
-        Aws::KMS::Model::EncryptResult result = output.GetResult();
-
-        cipherText = result.GetCiphertextBlob();
-
-#if 0
-				std::cout << "Error:" << output.GetError().GetMessage() << endl;
-			  printf(">>>> (%li)", cipherText.GetLength());
-				for (unsigned i = 0; i < cipherText.GetLength(); ++i) {
-						printf("%02x <%c> ", (unsigned char) cipherText[i], (char) cipherText[i]);
-				}
-				printf("\n");
-#endif
-		}
-
-		void decrypt(Aws::Utils::ByteBuffer cipherText, std::string& message) {
-        Aws::KMS::Model::DecryptRequest decryptRequest;
-        decryptRequest.SetCiphertextBlob(cipherText);
-
-        Aws::KMS::Model::DecryptOutcome decrypt_output;
-        decrypt_output = m_kmsClient->Decrypt(decryptRequest);
-        //std::cout << "Error:" << decrypt_output.GetError().GetMessage() << endl;
-
-        Aws::Utils::ByteBuffer plaintext;
-        Aws::KMS::Model::DecryptResult result_decrypt = decrypt_output.GetResult();
-
-        plaintext = result_decrypt.GetPlaintext();
-
-				//I didnt find a better way to do this!!!!
-				char msg[plaintext.GetLength() + 1];
-				for (unsigned i = 0; i < plaintext.GetLength(); ++i) {
-						msg[i] = (char) plaintext[i];
-				}
-				msg[plaintext.GetLength()] = '\0';
-
-				message = msg;
-		}
-
-    int getItem(std::string key, std::string& value) {
-//value = "TEST FIXED\n";
-//return 0;
-        Aws::DynamoDB::Model::GetItemRequest req;
-        Aws::DynamoDB::Model::AttributeValue haskKey;
-
-        haskKey.SetS(key.c_str());
-
-        req.AddKey("key", haskKey);
-        req.SetTableName(m_table.c_str());
-
-        value.clear();
-
-        const Aws::DynamoDB::Model::GetItemOutcome& result = m_dynamoClient->GetItem(req);
-        if (!result.IsSuccess()) {
-            //std::cout << "Failed to get item: " << result.GetError().GetMessage() << endl;
-            return -1;
-        }
-
-        const Aws::Map<Aws::String, Aws::DynamoDB::Model::AttributeValue>& item = result.GetResult().GetItem();
-        if (item.size() == 0) {
-            //std::cout << "No item found with the key " << key << std::endl;
-            return 1;
-        }
-
-				Aws::Utils::ByteBuffer cipherText = item.find("value")->second.GetB();
-				decrypt(cipherText, value);
-
-        return 0;
-    }
-
-    int putItem(std::string key, std::string value) {
-//return 0;
-        const Aws::String skey(key.c_str());
-        const Aws::String svalue(value.c_str());
-        Aws::Utils::ByteBuffer cipherText;
-
-        Aws::DynamoDB::Model::PutItemRequest pir;
-        pir.SetTableName(m_table.c_str());
-
-				encrypt(value, cipherText);
-
-        Aws::DynamoDB::Model::AttributeValue akey;
-        Aws::DynamoDB::Model::AttributeValue aencrypt;
-
-        akey.SetS(skey);
-        aencrypt.SetB(cipherText);
-
-        pir.AddItem("key", akey);
-        pir.AddItem("value", aencrypt);
-
-        const Aws::DynamoDB::Model::PutItemOutcome result = m_dynamoClient->PutItem(pir);
-        if (!result.IsSuccess()) {
-            std::cout << result.GetError().GetMessage() << std::endl;
-            return -1;
-        }
-
-        //std::cout << "put item done!" << std::endl;
-
-        return 0;
-    }
-};
-
-class Message
-{
-    TCPStream* m_stream;
-    msg_type m_type;
-    msg_error m_error;
-    Data m_data;
-    kv::proto::req_envelope* m_envelope;
-
-    int decodeHeader(char *data, int size) {
-        google::protobuf::uint32 len;
-        google::protobuf::io::ArrayInputStream ais(data, HEADER_SIZE);
-        google::protobuf::io::CodedInputStream coded_input(&ais);
-        coded_input.ReadVarint32(&len);
-#if 0
-        cout << "payload size is: " << size << endl;
-        printf("head raw: ");
-        int i;
-        for (i=0; i < 4; i++) {
-            printf("%02x ", data[i]);
-        }
-        printf("\n");
-#endif
-        return len;
-    }
-
-    int decodePayload(char *data, uint32_t size) {
-        kv::proto::req_envelope payload;
-#if 0
-        printf("payload raw: ");
-        int i;
-        for (i=0; i < size; i++) {
-            printf("%02x ", data[i]);
-        }
-        printf("\n");
-#endif
-        google::protobuf::io::ArrayInputStream ais(data,size);
-        google::protobuf::io::CodedInputStream coded_input(&ais);
-        coded_input.ReadVarint32(&size);
-
-        google::protobuf::io::CodedInputStream::Limit msgLimit = coded_input.PushLimit(size);
-
-        payload.ParseFromCodedStream(&coded_input);
-        coded_input.PopLimit(msgLimit);
-
-        if (DEBUG_MODE)
-            cout << "Message is " << payload.DebugString() << endl;
-
-        m_envelope = new kv::proto::req_envelope();
-        m_envelope->CopyFrom(payload);
-
-        return 0;
-    }
-
-    size_t getSize() {
-        size_t size;
-        char data[HEADER_SIZE];
-
-        size = m_stream->receive(data, HEADER_SIZE, MSG_PEEK);
-        if (size != HEADER_SIZE) {
-            return 0;
-        }
-
-        size = decodeHeader(data, HEADER_SIZE);
-        if (size == 0) {
-            return 0;
-        }
-
-        return size;
-    }
-
-    int getPayload(int size) {
-        size += HEADER_SIZE;
-        int len;
-        char data[size];
-
-        //printf("++++ size: %i\n", size);
-        len = m_stream->receive(data, size);
-        //printf(">>>> size: %i len:%i\n", size, len);
-        if (len != size) {
-            return 1;
-        }
-
-        int err;
-        err = decodePayload(data, size);
-        if (err) {
-            return 1;
-        }
-
-        return 0;
-    }
-
-  public:
-    Message(TCPStream* stream) : m_stream(stream), m_type(msg_type::unknown), m_error(msg_error::fail) {}
-    ~Message() {
-        if (m_envelope) {
-            delete m_envelope;
-        }
-    }
-    int unpack() {
-        size_t size;
-
-        size = getSize();
-        if (size <= 0) {
-            return 1;
-        }
-
-        int err;
-        err = getPayload(size);
-        if (err == 1) {
-            return 1;
-        }
-
-        if (m_envelope == NULL) {
-            return 1;
-        }
-
-        switch (m_envelope->type()) {
-          case kv::proto::req_envelope_msg_type::req_envelope_msg_type_set_request_t: {
-              m_type = msg_type::set;
-
-              if (m_envelope->has_set_req()) {
-                  kv::proto::set_request *s_request = m_envelope->mutable_set_req();
-                  kv::proto::data *req_data = s_request->mutable_req();
-                  m_data.setKey(req_data->key());
-                  m_data.setValue(req_data->value());
-              }
-          }
-          break;
-
-          case kv::proto::req_envelope_msg_type::req_envelope_msg_type_get_request_t: {
-              m_type = msg_type::get;
-              if (m_envelope->has_get_req()) {
-                  kv::proto::get_request *g_request = m_envelope->mutable_get_req();
-                  m_data.setKey(g_request->key());
-                  m_data.setValue("");
-              }
-          }
-          break;
-
-          default:
-              m_type = msg_type::unknown;
-              m_data.setKey("");
-              m_data.setValue("");
-          break;
-        }
-
-        return 0;
-    }
-
-    int response() {
-
-        if (m_type == msg_type::unknown) {
-            return 1;
-        }
-
-        kv::proto::req_envelope *envelope = new kv::proto::req_envelope();
-
-        switch(m_type) {
-            case msg_type::set: {
-                kv::proto::set_response *response = new kv::proto::set_response();
-
-                switch (m_error) {
-                    case msg_error::ok:
-                        response->set_error(kv::proto::set_response_error_t::set_response_error_t_ok);
-                    break;
-                    case msg_error::fail:
-                        response->set_error(kv::proto::set_response_error_t::set_response_error_t_internal);
-                    break;
-                    case msg_error::not_found:
-                    break;
-                }
-
-                envelope->set_type(kv::proto::req_envelope_msg_type::req_envelope_msg_type_set_response_t);
-                envelope->set_allocated_set_resp(response);
-            }
-            break;
-
-            case msg_type::get: {
-                kv::proto::get_response *response = new kv::proto::get_response();
-
-                kv::proto::data *req_data = new kv::proto::data();
-                if (m_error == msg_error::ok) {
-                    req_data->set_key(m_data.getKey());
-                    req_data->set_value(m_data.getValue());
-                    response->set_allocated_req(req_data);
-                }
-
-                switch (m_error) {
-                    case msg_error::ok:
-                        response->set_error(kv::proto::get_response_error_t::get_response_error_t_ok);
-                    break;
-                    case msg_error::fail:
-                        response->set_error(kv::proto::get_response_error_t::get_response_error_t_internal);
-                    break;
-                    case msg_error::not_found:
-                        response->set_error(kv::proto::get_response_error_t::get_response_error_t_not_found);
-                    break;
-                }
-
-                envelope->set_type(kv::proto::req_envelope_msg_type::req_envelope_msg_type_get_response_t);
-                envelope->set_allocated_get_resp(response);
-            }
-            break;
-            case msg_type::unknown:
-            break;
-        }
-
-        int len;
-        len = envelope->ByteSize() + HEADER_SIZE;
-        char *pkt = (char*) malloc(len);
-
-        if (pkt == NULL) {
-            perror("malloc");
-            return 1;
-        }
-
-        google::protobuf::io::ArrayOutputStream aos(pkt, len);
-        google::protobuf::io::CodedOutputStream *coded_output = new google::protobuf::io::CodedOutputStream(&aos);
-        coded_output->WriteVarint32(envelope->ByteSize());
-        envelope->SerializeToCodedStream(coded_output);
-
-        if (DEBUG_MODE)
-            cout << "Response is : " << envelope->DebugString();
-
-        m_stream->send(pkt, len);
-
-        free(pkt);
-
-        return 0;
-    }
-
-    int pack() {
-        return 0;
-    }
-
-    Data& getData() {
-        return m_data;
-    }
-
-    msg_type getType() {
-        return m_type;
-    }
-
-    void setError(msg_error error) {
-        m_error = error;
-    }
-};
-
-class MessageHandler
-{
-    TCPStream* m_stream;
-    AwsClient *m_awsClient;
-    Database *m_database;
-
-    int process() {
-        int err;
-        Message* message = new Message(m_stream);
-        err = message->unpack();
-
-        if (err) {
-            return 1;
-        }
-#if 0
-        printf("type: %i\n", message->getType());
-        printf("key: %s\n", message->getData().getKey().c_str());
-        printf("value: %s\n", message->getData().getValue().c_str());
-#endif
-
-        if (message->getType() == msg_type::set) {
-            err = m_database->putItem(message->getData().getKey(), message->getData().getValue());
-        } else if (message->getType() == msg_type::get) {
-            std::string value;
-            err = m_database->getItem(message->getData().getKey(), value);
-
-            if (value.size() > 0) {
-                message->getData().setValue(value);
-                err = 0;
-            } else {
-                err = 1;
-            }
-        }
-
-        switch (err) {
-            case -1:
-                message->setError(msg_error::fail);
-            break;
-
-            case 1:
-                message->setError(msg_error::not_found);
-            break;
-
-            case 0:
-            default:
-                message->setError(msg_error::ok);
-            break;
-        }
-
-        message->response();
-        delete message;
-
-        return 0;
-    }
-
-  public:
-    MessageHandler(TCPStream* stream) : m_stream(stream) {
-       m_awsClient = new AwsClient();
-       m_database = new Database(m_awsClient);
-    }
-    ~MessageHandler() {
-        delete m_awsClient;
-    }
-    int handler() {
-        int err;
-        //bool ready;
-
-        //printf("Message Handler process!!!\n");
-        while(1) {
-            //ready = m_stream->waitForReadEvent(1);
-            //if (ready) {
-                err = process();
-                //printf("> ip:%s err:%i\n", m_stream->getPeerIP().c_str(), err);
-                if (err) {
-                    return 1;
-                }
-            //}
-            //sleep(600);
-        }
-    }
-
-};
 
 class WorkItem
 {
     TCPStream* m_stream;
+		int m_state;
+		int m_fds;
 
   public:
     WorkItem(TCPStream* stream) : m_stream(stream) {}
     ~WorkItem() { delete m_stream; }
 
+		int getState() { return m_state; }
+		void setState(int state) { m_state = state; }
+		int getFds() { return m_fds; }
+		void setFds(int fds) { m_fds = fds; }
     TCPStream* getStream() { return m_stream; }
+
+		enum {
+				processing = 0,
+				pending = 1,
+				available = 2
+		};
 };
+
+wqueue<WorkItem*> feedback;
+
 
 class ConnectionHandler : public Thread
 {
@@ -617,16 +81,25 @@ class ConnectionHandler : public Thread
     ConnectionHandler(wqueue<WorkItem*>& queue) : m_queue(queue) {}
 
     void* run() {
-        for (int i = 0;; i++) {
-            printf("thread %lu, loop %d - waiting for item...\n",
-                   (long unsigned int)self(), i);
-            WorkItem* item = m_queue.remove();
-            printf("thread %lu, loop %d - got one item\n",
-                   (long unsigned int)self(), i);
-            TCPStream* stream = item->getStream();
+				int err;
+				MessageHandler *msg_handler = new MessageHandler();
 
-            MessageHandler msg_handler(stream);
-            msg_handler.handler();
+        for (int i = 0;; i++) {
+            printf("thread %lu, loop %d - waiting for item... size:%i\n", (long unsigned int)self(), i, m_queue.size());
+            WorkItem* item = m_queue.remove();
+						item->setState(WorkItem::processing);
+            printf("thread %lu, loop %d - got one item -> size:%i\n", (long unsigned int)self(), i, m_queue.size());
+            TCPStream* stream = item->getStream();
+            msg_handler->setStream(stream);
+
+            err = msg_handler->handler();
+						if (err) {
+								printf(">>>> Closed\n");
+								stream->setState(TCPStream::connectionClosed);
+						}
+						item->setState(WorkItem::available);
+						feedback.add(item);
+						printf(">>>> feedback: %i\n", feedback.size());
         }
         return NULL;
     }
@@ -643,7 +116,6 @@ class ConnectionSingleHandler : public Thread
 
     void* run() {
         MessageHandler msg_handler(m_stream);
-//printf("MessageHandler run\n");
         int err;
         while (1) {
             //printf("thread %lu - waiting for data...\n", (long unsigned int)self());
@@ -684,6 +156,7 @@ int main(int argc, char** argv)
         exit(-1);
     }
     //int workers = atoi(argv[1]);
+    int workers = 1;
     int port = atoi(argv[1]);
     string ip;
     if (argc == 3) {
@@ -692,9 +165,8 @@ int main(int argc, char** argv)
 
     signal(SIGPIPE, SIG_IGN);
 
-#if 0
     // Create the queue and consumer (worker) threads
-    wqueue<WorkItem*>  queue;
+    wqueue<WorkItem*> queue;
     for (int i = 0; i < workers; i++) {
         ConnectionHandler* handler = new ConnectionHandler(queue);
         if (!handler) {
@@ -706,7 +178,6 @@ int main(int argc, char** argv)
 
     // Create an acceptor then start listening for connections
     WorkItem* item;
-#endif
 
     TCPAcceptor* connectionAcceptor;
     if (ip.length() > 0) {
@@ -720,21 +191,135 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    TCPStream* connection = NULL;
     int num_cli = 0;
+    int server_socket = 0;
+    int client_socket = 0;
+
+    int max_sd;
+    fd_set working_set, readfds;
+    //fd_set working_set;
+
+    server_socket = connectionAcceptor->getSD();
+
+    FD_ZERO(&readfds);
+    max_sd = server_socket;
+    FD_SET(max_sd, &readfds);
+
+    //std::list<WorkItem*> clients;
+		//std::vector<WorkItem*> clients;
+		std::map<int, WorkItem*> clients;
+
+		int activity;
+
+		pollfd fds[5000];
+	  int i, current_size, nfds = 1;
+
+		memset(fds, 0 , sizeof(fds));
+
+		fds[0].fd = server_socket;
+	  fds[0].events = POLLIN;
+
     while (1) {
-        TCPStream* connection = connectionAcceptor->accept();
-        if (!connection) {
-            printf("Could not accept a connection\n");
-            continue;
+				memcpy(&working_set, &readfds, sizeof(readfds));
+
+				//printf("waiting for clients....\n");
+
+				activity = poll(fds, nfds, 100);
+        if (activity < 0) {
+            printf("select error");
+						break;
         }
 
-        printf("client: %i - %s\n", ++num_cli, connection->getPeerIP().c_str());
+				while (feedback.size() > 0) {
+						item = feedback.remove();
+						printf("added again -> %i %i\n", item->getFds(), item->getStream()->getSD());
+						fds[item->getFds()].fd = item->getStream()->getSD();
+				}
+
+				if (activity == 0) {
+						//printf(">>>>> timeout\n");
+						continue;
+				}
+
+				current_size = nfds;
+		    for (i = 0; i < current_size; i++) {
+					  if(fds[i].revents == 0)
+				        continue;
+
+						if(fds[i].revents != POLLIN) {
+				        printf("  Error! revents = %d\n", fds[i].revents);
+								break;
+						}
+
+						if ((fds[i].fd == server_socket) && (fds[i].revents & POLLIN)) {
+				        client_socket = connectionAcceptor->accept(connection);
+						    if (client_socket == -1) {
+							    //printf("Could not accept a connection\n");
+									//continue;
+									printf("Error, could not accept a new connection\n");
+								}
+
+				        if ((connection != NULL) && (client_socket > 0)) {
+						        printf("client: %i - %s\n", ++num_cli, connection->getPeerIP().c_str());
+
+
+										/*IMPROVE THIS.....*/
+										fds[nfds].fd = client_socket;
+					          fds[nfds].events = POLLIN;
+								    nfds++;
+
+										item = new WorkItem(connection);
+										if (!item) {
+												printf("Could not create work item a connection\n");
+												continue;
+										}
+
+										item->setState(WorkItem::available);
+										/*IMPROVE THIS.....*/
+										item->setFds(nfds-1);
+										clients[client_socket] = item;
+										printf("New client arrived sock:%i (size:%i) -> %i\n", client_socket, clients.size(), item->getState());
+						    }
+
+								continue;
+						}
+
+					  /* IMPROVE THIS..... NEW CLIENTS ARE WAITING FOR NEXT POOL */
+						if (fds[i].revents & POLLIN) {
+								item = (clients[fds[i].fd]);
+								connection = item->getStream();
+			          client_socket = fds[i].fd;
+
+                if (connection->getState() != TCPStream::connectionConnected) {
+                    printf("client disconnected - %s (%i)\n", connection->getPeerIP().c_str(), connection->getSD());
+								    fds[i].fd = -1;
+                    continue;
+                }
+
+							  printf(">>>>> item -> %i-%i\n", fds[i].fd, item->getState());
+							  if (item->getState() != WorkItem::available) {
+									  printf(">>>>> Already added in queue\n");
+									  continue;
+							  }
+
+							  /*IMPROVE THIS.....*/
+							  printf("Added client on queue\n");
+							  item->setState(WorkItem::pending);
+							  queue.add(clients[fds[i].fd]);
+							  printf("removed -> %i %i\n", item->getFds(), item->getStream()->getSD());
+							  fds[i].fd = -1;
+				   }
+#if 0
+        client_socket = connectionAcceptor->accept(connection);
         ConnectionSingleHandler* single_handler = new ConnectionSingleHandler(connection);
         if (!single_handler) {
             printf("Could not create ConnectionSingleHandler\n");
             continue;
         }
         single_handler->start();
+#endif
+
 #if 0
         item = new WorkItem(connection);
         if (!item) {
@@ -743,6 +328,8 @@ int main(int argc, char** argv)
         }
         queue.add(item);
 #endif
+				}
+
     }
 
     return 0;

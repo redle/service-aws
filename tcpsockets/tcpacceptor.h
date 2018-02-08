@@ -41,8 +41,9 @@ class TCPAcceptor
     TCPAcceptor(int port, const char* address="");
     ~TCPAcceptor();
 
-    int        start();
-    TCPStream* accept();
+    int start();
+    int accept(TCPStream*&);
+    int getSD() { return m_lsd; }
 
   private:
     TCPAcceptor() {}
