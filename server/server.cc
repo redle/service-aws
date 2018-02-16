@@ -69,20 +69,43 @@ class WorkItem
 		};
 };
 
+
+class WorkItemMessage
+{
+    TCPStream* m_stream;
+		Message* m_message;
+
+  public:
+    WorkItemMessage(TCPStream* stream, Message* message) : m_stream(stream), m_message(message) {}
+    ~WorkItemMessage() { delete m_stream; }
+
+    TCPStream* getStream() { return m_stream; }
+		Message*& getMessage() { return m_message; }
+
+		enum {
+				processing = 0,
+				pending = 1,
+				available = 2
+		};
+};
+
 wqueue<WorkItem*> feedback;
 
 
 class ConnectionHandler : public Thread
 {
     wqueue<WorkItem*>& m_queue;
-    TCPStream* m_stream;
 
   public:
     ConnectionHandler(wqueue<WorkItem*>& queue) : m_queue(queue) {}
 
     void* run() {
 				int err;
-				MessageHandler *msg_handler = new MessageHandler();
+        AwsClient *awsClient = AwsClient::instance();
+        DynamoDB *database = new DynamoDB(awsClient, true);
+				/*Create a object poll to reuse old objects*/
+				MessageHandler *msg_handler;
+				Message *message;
 
         for (int i = 0;; i++) {
             printf("thread %lu, loop %d - waiting for item... size:%i\n", (long unsigned int)self(), i, m_queue.size());
@@ -90,43 +113,70 @@ class ConnectionHandler : public Thread
 						item->setState(WorkItem::processing);
             printf("thread %lu, loop %d - got one item -> size:%i\n", (long unsigned int)self(), i, m_queue.size());
             TCPStream* stream = item->getStream();
-            msg_handler->setStream(stream);
+						//msg_handler = new MessageHandler(database);
+						msg_handler = new MessageHandler();
+						//msg_handler = new MessageHandler();
+            //msg_handler->setStream(stream);
+            msg_handler->setMessage(message);
 
             err = msg_handler->handler();
 						if (err) {
 								printf(">>>> Closed\n");
 								stream->setState(TCPStream::connectionClosed);
 						}
+#if 0
+            err = msg_handler->handler();
+						if (err) {
+								printf(">>>> Closed\n");
+								stream->setState(TCPStream::connectionClosed);
+						}
+#endif
 						item->setState(WorkItem::available);
 						feedback.add(item);
 						printf(">>>> feedback: %i\n", feedback.size());
         }
+
         return NULL;
     }
 };
 
-class ConnectionSingleHandler : public Thread
+class ConnectionMessageHandler : public Thread
 {
-    TCPStream* m_stream;
+    wqueue<WorkItemMessage*>& m_queue;
 
   public:
-    ConnectionSingleHandler(TCPStream* stream) : m_stream(stream) {
-        //printf("Create MessageHandler\n");
-    }
+    ConnectionMessageHandler(wqueue<WorkItemMessage*>& queue) : m_queue(queue) {}
 
     void* run() {
-        MessageHandler msg_handler(m_stream);
-        int err;
-        while (1) {
-            //printf("thread %lu - waiting for data...\n", (long unsigned int)self());
-            err = msg_handler.handler();
-            if (err) {
-                printf("client disconnected - %s\n", m_stream->getPeerIP().c_str());
-                break;
-            }
+				int err;
+        AwsClient *awsClient = AwsClient::instance();
+        DynamoDB *database = new DynamoDB(awsClient, true);
+				/*Create a object poll to reuse old objects*/
+				MessageHandler *msg_handler;
+				WorkItemMessage* item;
 
+        for (int i = 0;; i++) {
+            printf("message-> thread %lu, loop %d - waiting for item... size:%i\n", (long unsigned int)self(), i, m_queue.size());
+            item = m_queue.remove();
+						//item->setState(WorkItem::processing);
+            printf("message-> thread %lu, loop %d - got one item -> size:%i\n", (long unsigned int)self(), i, m_queue.size());
+						//msg_handler = new MessageHandler(database);
+						msg_handler = new MessageHandler();
+            msg_handler->setStream(item->getStream());
+            msg_handler->setMessage(item->getMessage());
+						//msg_handler->getMessage();
+
+            err = msg_handler->handler();
+						if (err) {
+								printf(">>>> Closed\n");
+								//stream->setState(TCPStream::connectionClosed);
+						}
+
+						//item->setState(WorkItem::available);
+						//feedback.add(item);
+						//printf(">>>> feedback: %i\n", feedback.size());
         }
-        delete m_stream;
+
         return NULL;
     }
 };
@@ -166,9 +216,11 @@ int main(int argc, char** argv)
     signal(SIGPIPE, SIG_IGN);
 
     // Create the queue and consumer (worker) threads
-    wqueue<WorkItem*> queue;
+    //wqueue<WorkItem*> queue;
+    wqueue<WorkItemMessage*> queue;
     for (int i = 0; i < workers; i++) {
-        ConnectionHandler* handler = new ConnectionHandler(queue);
+        //ConnectionHandler* handler = new ConnectionHandler(queue);
+        ConnectionMessageHandler* handler = new ConnectionMessageHandler(queue);
         if (!handler) {
             printf("Could not create ConnectionHandler %d\n", i);
             exit(1);
@@ -178,6 +230,8 @@ int main(int argc, char** argv)
 
     // Create an acceptor then start listening for connections
     WorkItem* item;
+    WorkItemMessage* item_message;
+		Message *message;
 
     TCPAcceptor* connectionAcceptor;
     if (ip.length() > 0) {
@@ -248,8 +302,8 @@ int main(int argc, char** argv)
 				        continue;
 
 						if(fds[i].revents != POLLIN) {
-				        printf("  Error! revents = %d\n", fds[i].revents);
-								break;
+				        printf("  Error! revents = (%i) %d\n", i, fds[i].revents);
+								//break;
 						}
 
 						if ((fds[i].fd == server_socket) && (fds[i].revents & POLLIN)) {
@@ -291,34 +345,37 @@ int main(int argc, char** argv)
 								connection = item->getStream();
 			          client_socket = fds[i].fd;
 
+								message = new Message();
+								int err = Protocol::getMessage(connection, message);
+								if (err) {
+                    printf("client disconnected - %s (%i)\n", connection->getPeerIP().c_str(), connection->getSD());
+								    fds[i].fd = -1;
+                    continue;
+						    }
+
+								item_message = new WorkItemMessage(connection, message);
+
+							  queue.add(item_message);
+
                 if (connection->getState() != TCPStream::connectionConnected) {
                     printf("client disconnected - %s (%i)\n", connection->getPeerIP().c_str(), connection->getSD());
 								    fds[i].fd = -1;
                     continue;
                 }
-
+#if 0
 							  printf(">>>>> item -> %i-%i\n", fds[i].fd, item->getState());
 							  if (item->getState() != WorkItem::available) {
 									  printf(">>>>> Already added in queue\n");
 									  continue;
 							  }
-
 							  /*IMPROVE THIS.....*/
 							  printf("Added client on queue\n");
 							  item->setState(WorkItem::pending);
-							  queue.add(clients[fds[i].fd]);
-							  printf("removed -> %i %i\n", item->getFds(), item->getStream()->getSD());
-							  fds[i].fd = -1;
-				   }
-#if 0
-        client_socket = connectionAcceptor->accept(connection);
-        ConnectionSingleHandler* single_handler = new ConnectionSingleHandler(connection);
-        if (!single_handler) {
-            printf("Could not create ConnectionSingleHandler\n");
-            continue;
-        }
-        single_handler->start();
 #endif
+							  //queue.add(clients[fds[i].fd]);
+							  //printf("removed -> %i %i\n", item->getFds(), item->getStream()->getSD());
+							  //fds[i].fd = -1;
+				   }
 
 #if 0
         item = new WorkItem(connection);

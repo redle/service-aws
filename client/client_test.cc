@@ -9,6 +9,8 @@
 #include <string>
 #include <array>
 #include <iostream>
+#include <sys/time.h>
+#include <math.h>
 
 #include <google/protobuf/message.h>
 #include <google/protobuf/descriptor.h>
@@ -176,13 +178,12 @@ int main(int argc, char** argv) {
 		int get_mode = 0;
 		int test_mode = 0;
 		int burst_mode = 0;
+		int random_seed = 0;
 		char *hostname = NULL;
 		char *key_item = NULL;
 		char *value_item = NULL;
 
-	  srand(time(NULL));
-
-    while ((option = getopt(argc, argv,"h:p:sgk:v:tb")) != -1) {
+    while ((option = getopt(argc, argv,"h:p:sgk:v:tbr:")) != -1) {
         switch (option) {
              case 'h' : hostname = optarg;
                  break;
@@ -199,6 +200,8 @@ int main(int argc, char** argv) {
              case 'k' : key_item = optarg;
                  break;
              case 'v' : value_item = optarg;
+                 break;
+             case 'r': random_seed = atoi(optarg);
                  break;
              default: print_usage();
                  exit(EXIT_FAILURE);
@@ -224,7 +227,14 @@ int main(int argc, char** argv) {
 				print_usage();
 		}
 
-	  srand(time(NULL));
+    struct timeval  tv;
+    gettimeofday(&tv, NULL);
+    if (random_seed > 0) {
+	      srand(random_seed);
+    } else {
+        uint32_t time_in_mill = round(tv.tv_usec / 1000);
+	      srand(time(NULL) + time_in_mill);
+    }
 
     if ((he = gethostbyname(hostname)) == NULL) {
         perror("gethostbyname");
@@ -260,7 +270,7 @@ int main(int argc, char** argv) {
 
 		    while (1) {
 						cout << "#####################################" << endl;
-						srand(time(NULL) + get_random(1234));
+						//srand(time(NULL) + get_random(1234));
 		        kidx = get_random(100000);
 
 						rand_string(svalue, 64);
@@ -285,7 +295,8 @@ int main(int argc, char** argv) {
             //if (burst_mode)
 		        //    sleep(get_random(60));
 						//else
-								sleep(10);
+            if (burst_mode)
+								sleep(1);
 				}
 		}
     close(fd);

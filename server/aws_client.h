@@ -17,10 +17,13 @@ class AwsClient
     Aws::Client::ClientConfiguration m_clientConfig;
     Aws::String m_region;
     Aws::SDKOptions m_options;
+    static AwsClient* m_instance;
   public:
     AwsClient(std::string region);
     AwsClient();
     ~AwsClient();
+    static AwsClient* instance();
     Aws::Client::ClientConfiguration getClientConfig();
 };
+
 #endif

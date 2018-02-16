@@ -30,8 +30,10 @@ class FooDB;
 class Database
 {
   public:
-    virtual int getItem(Message*& message) = 0;
-    virtual int putItem(Message*& message) = 0;
+    virtual ~Database() {};
+    virtual int getItem(Message*& ) = 0;
+    virtual int putItem(Message*& ) = 0;
+    virtual void setHandler(MessageHandler* ) = 0;
 };
 
 class FooDB: public Database
@@ -39,6 +41,7 @@ class FooDB: public Database
   public:
     int getItem(Message*& message);
     int putItem(Message*& message);
+    void setHandler(MessageHandler* handler) {};
 };
 
 class DynamoDB: public Database
@@ -48,9 +51,15 @@ class DynamoDB: public Database
     Aws::KMS::KMSClient* m_kmsClient;
     std::string m_table;
     std::string m_keyid;
+
+    Message* m_message;
+    void showMessage();
+
+    MessageHandler* m_handler;
+    bool m_async;
   public:
-    DynamoDB(AwsClient* awsClient);
-    ~DynamoDB();
+    DynamoDB(AwsClient* , bool );
+    virtual ~DynamoDB();
 
 		void encrypt(std::string plainText, Aws::Utils::ByteBuffer& cipherText);
 		void decrypt(Aws::Utils::ByteBuffer cipherText, std::string& message);
@@ -66,5 +75,7 @@ class DynamoDB: public Database
                                 const Aws::DynamoDB::Model::GetItemRequest& request,
                                 const Aws::DynamoDB::Model::GetItemOutcome& outcome,
                                 const std::shared_ptr<const  Aws::Client::AsyncCallerContext>& context);
+
+    void setHandler(MessageHandler* handler);
 };
 #endif

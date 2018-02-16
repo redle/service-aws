@@ -1,7 +1,7 @@
 CC		    = g++
 CFLAGS		= -c -Wall -g3 -pg
 LDFLAGS		= -lpthread -lprotobuf -laws-cpp-sdk-core -laws-cpp-sdk-dynamodb -laws-cpp-sdk-kms
-SOURCES		= server/aws_client.cc server/message.cc server/database.cc server/server.cc threads/thread.cc tcpsockets/tcpacceptor.cc tcpsockets/tcpstream.cc protobuf/kv.proto.pb.cc
+SOURCES		= server/aws_client.cc server/procotol.cc server/message.cc server/database.cc server/server.cc threads/thread.cc tcpsockets/tcpacceptor.cc tcpsockets/tcpstream.cc protobuf/kv.proto.pb.cc
 INCLUDES	= -Ithreads -Iwqueue -Itcpsockets -Iprotobuf -Iserver
 OBJECTS		= $(SOURCES:.cc=.o) 
 TARGET		= service

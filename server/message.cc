@@ -84,9 +84,6 @@ int Message::getPayload(int size) {
 }
 
 Message::~Message() {
-    if (m_envelope) {
-        delete m_envelope;
-    }
 }
 
 int Message::unpack() {
@@ -114,8 +111,8 @@ int Message::unpack() {
           if (m_envelope->has_set_req()) {
               kv::proto::set_request *s_request = m_envelope->mutable_set_req();
               kv::proto::data *req_data = s_request->mutable_req();
-              m_data.setKey(req_data->key());
-              m_data.setValue(req_data->value());
+              m_key = req_data->key();
+              m_value = req_data->value();
           }
       }
       break;
@@ -124,16 +121,16 @@ int Message::unpack() {
           m_type = msg_type::get;
           if (m_envelope->has_get_req()) {
               kv::proto::get_request *g_request = m_envelope->mutable_get_req();
-              m_data.setKey(g_request->key());
-              m_data.setValue("");
+              m_key = g_request->key();
+              m_value = "";
           }
       }
       break;
 
       default:
           m_type = msg_type::unknown;
-          m_data.setKey("");
-          m_data.setValue("");
+          m_key = "";
+          m_value = "";
       break;
     }
 
@@ -174,8 +171,8 @@ int Message::response() {
 
             kv::proto::data *req_data = new kv::proto::data();
             if (m_error == msg_error::ok) {
-                req_data->set_key(m_data.getKey());
-                req_data->set_value(m_data.getValue());
+                req_data->set_key(m_key);
+                req_data->set_value(m_value);
                 response->set_allocated_req(req_data);
             }
 
@@ -217,6 +214,8 @@ int Message::response() {
     if (DEBUG_MODE)
         cout << "Response is : " << envelope->DebugString();
 
+    printf("socket:%i\n", m_stream->getSD());
+
     m_stream->send(pkt, len);
 
     free(pkt);
@@ -226,106 +225,123 @@ int Message::response() {
     return 0;
 }
 
-void Message::onResponse() {
-		printf("on response");
-#if 0
-    if (getType() == msg_type::set) {
-        err = m_database->putItem(message);
-    } else if (getType() == msg_type::get) {
-        std::string value;
-        err = m_database->getItem(message);
-
-        if (value.size() > 0) {
-            message->getData().setValue(value);
-            err = 0;
-        } else {
-            err = 1;
-        }
-    }
-
-    switch (err) {
-        case -1:
-            message->setError(msg_error::fail);
-        break;
-
-        case 1:
-            message->setError(msg_error::not_found);
-        break;
-
-        case 0:
-        default:
-            message->setError(msg_error::ok);
-        break;
-    }
-
-    message->response();
-    delete this;
-#endif
-		return;
-}
-
-int Message::pack() {
-    return 0;
-}
-
-Data& Message::getData() {
-    return m_data;
+bool Message::isValid() {
+    return m_valid;
 }
 
 msg_type Message::getType() {
     return m_type;
 }
 
+msg_error Message::getError() {
+    return m_error;
+}
+
 void Message::setError(msg_error error) {
     m_error = error;
 }
 
+void Message::setType(msg_type type) {
+    m_type = type;
+}
+
+void Message::setKey(std::string key) {
+    m_key = key;
+}
+
+void Message::setValue(std::string value) {
+    m_value = value;
+}
+
+std::string Message::getKey() {
+    return m_key;
+}
+
+std::string Message::getValue() {
+    return m_value;
+}
+
+MessageHandler::MessageHandler(Database* database) {
+   m_database = database;
+   database->setHandler(this);
+}
+
+MessageHandler::MessageHandler() {
+   m_awsClient = AwsClient::instance();
+   m_database = new DynamoDB(m_awsClient, true);
+   m_database->setHandler(this);
+}
+
+MessageHandler::~MessageHandler() {
+    delete m_database;
+    delete m_message;
+}
+
+Message* MessageHandler::getMessage() {
+#if 0
+    int err;
+    Message* message = new Message();
+    Protocol* protocol = new Protocol(m_stream);
+
+    err = protocol->getMessage();
+    if (err) {
+        return NULL;
+    }
+
+    printf("type: %i\n", protocol->getData().getType());
+    printf("key: %s\n", protocol->getData().getKey().c_str());
+    printf("value: %s\n", protocol->getData().getValue().c_str());
+
+    message->setType(protocol->getData().getType());
+    message->setKey(protocol->getData().getKey());
+    message->setValue(protocol->getData().getValue());
+#endif
+    return 0;
+}
+
+void MessageHandler::setMessage(Message*& message) {
+    m_message = message;
+}
+
 int MessageHandler::process() {
     int err;
-    Message* message = new Message(m_stream);
-    err = message->unpack();
 
-    if (err) {
-        return 1;
-    }
-#if 0
-    printf("type: %i\n", message->getType());
-    printf("key: %s\n", message->getData().getKey().c_str());
-    printf("value: %s\n", message->getData().getValue().c_str());
-#endif
+    printf("type: %i\n", m_message->getType());
+    printf("key: %s\n", m_message->getKey().c_str());
+    printf("value: %s\n", m_message->getValue().c_str());
 
-    if (message->getType() == msg_type::set) {
-        err = m_database->putItem(message);
-    } else if (message->getType() == msg_type::get) {
+    if (m_message->getType() == msg_type::set) {
+        err = m_database->putItem(m_message);
+    } else if (m_message->getType() == msg_type::get) {
         std::string value;
-        err = m_database->getItem(message);
+        err = m_database->getItem(m_message);
 
         if (value.size() > 0) {
-            message->getData().setValue(value);
+            m_message->setValue(value);
             err = 0;
         } else {
             err = 1;
         }
     }
-
+#if 0
     switch (err) {
         case -1:
-            message->setError(msg_error::fail);
+            m_message->setError(msg_error::fail);
         break;
 
         case 1:
-            message->setError(msg_error::not_found);
+            m_message->setError(msg_error::not_found);
         break;
 
         case 0:
         default:
-            message->setError(msg_error::ok);
+            m_message->setError(msg_error::ok);
         break;
     }
 
     message->response();
     delete message;
-
+#endif
     return 0;
 }
 
@@ -339,8 +355,8 @@ int MessageHandler::sync_process() {
     }
 #if 0
     printf("type: %i\n", message->getType());
-    printf("key: %s\n", message->getData().getKey().c_str());
-    printf("value: %s\n", message->getData().getValue().c_str());
+    printf("key: %s\n", message->getKey().c_str());
+    printf("value: %s\n", message->getValue().c_str());
 #endif
 
     if (message->getType() == msg_type::set) {
@@ -350,7 +366,7 @@ int MessageHandler::sync_process() {
         err = m_database->getItem(message);
 
         if (value.size() > 0) {
-            message->getData().setValue(value);
+            message->setValue(value);
             err = 0;
         } else {
             err = 1;
@@ -378,21 +394,7 @@ int MessageHandler::sync_process() {
     return 0;
 }
 
-MessageHandler::MessageHandler() {
-   m_awsClient = new AwsClient();
-   m_database = new DynamoDB(m_awsClient);
-   //m_database = new FooDB();
-}
-
-MessageHandler::MessageHandler(TCPStream*& stream) : MessageHandler() {
-		m_stream = stream;
-}
-
-MessageHandler::~MessageHandler() {
-    delete m_awsClient;
-}
-
-void MessageHandler::setStream(TCPStream*& stream) {
+void MessageHandler::setStream(TCPStream* stream) {
 	  m_stream = stream;
 }
 
@@ -406,4 +408,36 @@ int MessageHandler::handler() {
         }
 				return 0;
     }
+}
+
+void MessageHandler::onResponse(msg_error err) {
+    printf("MessageHandler::onResponse -> putItem %i\n", getSD());
+
+    std::string key = m_message->getKey();
+    std::string value = m_message->getValue();
+
+    printf(">>>>>>>>>>>>>> key:%s value:%s\n", key.c_str(), value.c_str());
+
+    m_message->setError(err);
+    Protocol::response(m_stream, m_message);
+
+    delete this;
+
+    return;
+}
+
+void MessageHandler::onResponse(std::string value, msg_error err) {
+    printf("MessageHandler::onResponse -> getItem %i\n", getSD());
+
+    std::string key = m_message->getKey();
+    m_message->setValue(value.c_str());
+
+    printf(">>>>>>>>>>>>>> key:%s value:%s\n", key.c_str(), value.c_str());
+
+    m_message->setError(err);
+    Protocol::response(m_stream, m_message);
+
+    delete this;
+
+    return;
 }
