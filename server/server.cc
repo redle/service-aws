@@ -77,7 +77,10 @@ class WorkItemMessage
 
   public:
     WorkItemMessage(TCPStream* stream, Message* message) : m_stream(stream), m_message(message) {}
-    ~WorkItemMessage() { delete m_stream; }
+    ~WorkItemMessage() {
+				delete m_stream;
+				delete m_message;
+		}
 
     TCPStream* getStream() { return m_stream; }
 		Message*& getMessage() { return m_message; }
@@ -113,8 +116,8 @@ class ConnectionHandler : public Thread
 						item->setState(WorkItem::processing);
             printf("thread %lu, loop %d - got one item -> size:%i\n", (long unsigned int)self(), i, m_queue.size());
             TCPStream* stream = item->getStream();
-						//msg_handler = new MessageHandler(database);
-						msg_handler = new MessageHandler();
+						msg_handler = new MessageHandler(database);
+						//msg_handler = new MessageHandler();
 						//msg_handler = new MessageHandler();
             //msg_handler->setStream(stream);
             msg_handler->setMessage(message);
@@ -150,28 +153,48 @@ class ConnectionMessageHandler : public Thread
     void* run() {
 				int err;
         AwsClient *awsClient = AwsClient::instance();
-        DynamoDB *database = new DynamoDB(awsClient, true);
 				/*Create a object poll to reuse old objects*/
+        DynamoDB *database;
 				MessageHandler *msg_handler;
 				WorkItemMessage* item;
 
         for (int i = 0;; i++) {
-            printf("message-> thread %lu, loop %d - waiting for item... size:%i\n", (long unsigned int)self(), i, m_queue.size());
+            //printf("thread %lu, loop %d - waiting for item... size:%i\n", (long unsigned int)self(), i, m_queue.size());
             item = m_queue.remove();
-						//item->setState(WorkItem::processing);
-            printf("message-> thread %lu, loop %d - got one item -> size:%i\n", (long unsigned int)self(), i, m_queue.size());
-						//msg_handler = new MessageHandler(database);
-						msg_handler = new MessageHandler();
-            msg_handler->setStream(item->getStream());
-            msg_handler->setMessage(item->getMessage());
-						//msg_handler->getMessage();
+            //printf("thread %lu, loop %d - got one item -> size:%i\n", (long unsigned int)self(), i, m_queue.size());
 
-            err = msg_handler->handler();
-						if (err) {
-								printf(">>>> Closed\n");
-								//stream->setState(TCPStream::connectionClosed);
+						switch (item->getMessage()->getState()) {
+								case (Message::state_t::pending): {
+										printf("Message -> pending\n");
+										database = new DynamoDB(awsClient, true);
+									  msg_handler = new MessageHandler(database);
+										//msg_handler = new MessageHandler();
+								    msg_handler->setStream(item->getStream());
+								    msg_handler->setMessage(item->getMessage());
+										//msg_handler->getMessage();
+
+				            err = msg_handler->handler();
+										if (err) {
+												printf(">>>> Closed\n");
+												//stream->setState(TCPStream::connectionClosed);
+										}
+										//delete msg_handler;
+										m_queue.add(item);
+								}
+								break;
+								case (Message::state_t::processing): {
+										m_queue.add(item);
+								}
+								break;
+								case (Message::state_t::ready): {
+										printf("Message -> ready\n");
+										Protocol::response(item->getStream(), item->getMessage());
+										free(item);
+								}
+								break;
 						}
 
+						usleep(10);
 						//item->setState(WorkItem::available);
 						//feedback.add(item);
 						//printf(">>>> feedback: %i\n", feedback.size());

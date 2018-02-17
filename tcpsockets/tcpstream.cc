@@ -91,7 +91,7 @@ int TCPStream::getSD()
     return m_sd;
 }
 
-int	TCPStream::setState(int state) {
+void	TCPStream::setState(int state) {
     m_state = state;
 }
 

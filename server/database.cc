@@ -1,12 +1,5 @@
+#include <future>
 #include "database.h"
-
-
-void DynamoDB::showMessage() {
-    std::string key = m_message->getKey();
-    std::string value = m_message->getValue();
-
-    printf(">>>>>>>>>>>>>> key:%s value:%s\n", key.c_str(), value.c_str());
-}
 
 int FooDB::getItem(Message*& message) {
     message->setValue("TEST FIXED\n");
@@ -20,7 +13,6 @@ int FooDB::putItem(Message*& message) {
 DynamoDB::DynamoDB(AwsClient* awsClient, bool async = true) {
     m_awsClient = awsClient;
     m_table = "data";
-    m_handler = NULL;
     m_async = async;
     char *env_arnkey = getenv("AWS_ARN_ENCRYPT_KEY");
     m_keyid = env_arnkey;
@@ -52,17 +44,18 @@ void DynamoDB::PutItemOutcomeReceived(const Aws::DynamoDB::DynamoDBClient* sende
 
     std::cout << "ASYNC: put item done!" << std::endl;
 
-    //putItemResultsFromCallbackTest.push_back(outcome);
-		printf(">>>>>> PutItemOutcomeReceived -> %i\n", m_handler->getSD());
-    showMessage();
-    m_handler->onResponse(err);
+		printf(">>>>>> PutItemOutcomeReceived\n");
+
+    m_message->setError(err);
+    m_message->setState(Message::state_t::ready);
+
+    delete this;
 }
 
 void DynamoDB::GetItemOutcomeReceived(const Aws::DynamoDB::DynamoDBClient* sender,
                             const Aws::DynamoDB::Model::GetItemRequest& request,
                             const Aws::DynamoDB::Model::GetItemOutcome& outcome,
                             const std::shared_ptr<const  Aws::Client::AsyncCallerContext>& context) {
-
     msg_error err;
 
     AWS_UNREFERENCED_PARAM(sender);
@@ -85,9 +78,11 @@ void DynamoDB::GetItemOutcomeReceived(const Aws::DynamoDB::DynamoDBClient* sende
 		decrypt(cipherText, value);
 #endif
 
-    m_handler->onResponse(value, err);
+    m_message->setValue(value);
+    m_message->setError(err);
+    m_message->setState(Message::state_t::ready);
 
-    return;
+    delete this;
 }
 
 void DynamoDB::encrypt(std::string plainText, Aws::Utils::ByteBuffer& cipherText) {
@@ -145,6 +140,7 @@ void DynamoDB::decrypt(Aws::Utils::ByteBuffer cipherText, std::string& message) 
 }
 
 int DynamoDB::getItem(Message*& message) {
+    m_message = message;
     std::string key = message->getKey();
 		std::string value;
 
@@ -234,46 +230,7 @@ int DynamoDB::putItem(Message*& message) {
     return 0;
 }
 
-#if 0
-void DynamoDB::onResponse() {
-		printf("on response");
-
-    if (getType() == msg_type::set) {
-        err = m_database->putItem(message);
-    } else if (getType() == msg_type::get) {
-        std::string value;
-        err = m_database->getItem(message);
-
-        if (value.size() > 0) {
-            message->getData().setValue(value);
-            err = 0;
-        } else {
-            err = 1;
-        }
-    }
-
-    switch (err) {
-        case -1:
-            message->setError(msg_error::fail);
-        break;
-
-        case 1:
-            message->setError(msg_error::not_found);
-        break;
-
-        case 0:
-        default:
-            message->setError(msg_error::ok);
-        break;
-    }
-
-    message->response();
-    delete this;
-
-		return;
-}
-#endif
-
-void DynamoDB::setHandler(MessageHandler* handler) {
-    m_handler = handler;
+int DynamoDB::putItemHandle(Message*& message) {
+    //std::future<int> resultFromDB = std::async(std::launch::async, DynamoDB::putItem, message);
+    return 0;
 }

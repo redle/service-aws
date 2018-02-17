@@ -52,7 +52,7 @@ class TCPStream
     string getPeerIP();
     int getPeerPort();
     int getSD();
-		int setState(int );
+		void setState(int );
 		int getState();
 
     enum {

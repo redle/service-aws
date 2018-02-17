@@ -33,7 +33,6 @@ class Database
     virtual ~Database() {};
     virtual int getItem(Message*& ) = 0;
     virtual int putItem(Message*& ) = 0;
-    virtual void setHandler(MessageHandler* ) = 0;
 };
 
 class FooDB: public Database
@@ -53,9 +52,7 @@ class DynamoDB: public Database
     std::string m_keyid;
 
     Message* m_message;
-    void showMessage();
 
-    MessageHandler* m_handler;
     bool m_async;
   public:
     DynamoDB(AwsClient* , bool );
@@ -66,6 +63,7 @@ class DynamoDB: public Database
 
     int getItem(Message*& message);
     int putItem(Message*& message);
+    virtual int putItemHandle(Message*& message);
 
     void PutItemOutcomeReceived(const Aws::DynamoDB::DynamoDBClient* sender,
                                 const Aws::DynamoDB::Model::PutItemRequest& request,
@@ -76,6 +74,5 @@ class DynamoDB: public Database
                                 const Aws::DynamoDB::Model::GetItemOutcome& outcome,
                                 const std::shared_ptr<const  Aws::Client::AsyncCallerContext>& context);
 
-    void setHandler(MessageHandler* handler);
 };
 #endif
