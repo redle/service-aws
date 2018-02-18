@@ -34,12 +34,12 @@ using std::array;
 using namespace kv::proto;
 using namespace google::protobuf::io;
 
-void read_body(int , google::protobuf::uint32 );
+int read_body(int , google::protobuf::uint32 );
 google::protobuf::uint32 read_header(char *);
-void read_handler(int );
+int read_handler(int );
 void send_msg(int , req_envelope*);
 
-void setRequest(int fd, string key, string value) {
+int setRequest(int fd, string key, string value) {
     string msg;
     req_envelope *envelope = new req_envelope();
     set_request *s_request = new set_request();
@@ -55,10 +55,10 @@ void setRequest(int fd, string key, string value) {
     //printf("Envelope size:%i\n", envelope->ByteSize());
 
     send_msg(fd, envelope);
-    read_handler(fd);
+    return read_handler(fd);
 }
 
-void getRequest(int fd, string key) {
+int getRequest(int fd, string key) {
     req_envelope *envelope = new req_envelope();
     get_request *g_request = new get_request();
 
@@ -66,14 +66,14 @@ void getRequest(int fd, string key) {
 
     envelope->set_type(kv::proto::req_envelope_msg_type::req_envelope_msg_type_get_request_t);
     envelope->set_allocated_get_req(g_request);
-
+  
     //printf("Envelope size:%i\n", envelope->ByteSize());
 
     send_msg(fd, envelope);
-    read_handler(fd);
+    return read_handler(fd);
 }
 
-void read_handler(int socketfd) {
+int read_handler(int socketfd) {
     char buffer[4];
     int bytecount = 0;
 
@@ -83,16 +83,15 @@ void read_handler(int socketfd) {
 				fprintf(stderr, "Error receiving data %d\n", errno);
     }
 
-    read_body(socketfd, read_header(buffer));
-
-    return;
+    return read_body(socketfd, read_header(buffer));
 }
 
-void read_body(int sockfd, google::protobuf::uint32 siz) {
+int read_body(int sockfd, google::protobuf::uint32 siz) {
   siz += 4;
   int bytecount;
   char buffer[siz];
   req_envelope payload;
+  req_envelope* envelope;
 
   if((bytecount = recv(sockfd, (void *)buffer, siz, MSG_WAITALL))== -1){
     fprintf(stderr, "Error receiving data %d\n", errno);
@@ -109,6 +108,32 @@ void read_body(int sockfd, google::protobuf::uint32 siz) {
   coded_input.PopLimit(msgLimit);
 
   cout << "Message received: " << payload.DebugString() << endl;
+
+  envelope = new kv::proto::req_envelope();
+  envelope->CopyFrom(payload);
+
+  int err = 0;
+
+  switch (envelope->type()) {
+    case req_envelope::set_response_t: {
+        set_response *response = envelope->release_set_resp();
+
+        if (response->error() == set_response_error_t_internal) {
+            err =1;
+        }
+
+    }
+    break;
+    case req_envelope::get_response_t: {
+        get_response *response = envelope->release_get_resp();
+        if (response->error() == get_response_error_t_internal) {
+            err = 1;
+        }
+    }
+    break;
+  }
+
+  return err;
 }
 
 void send_msg(int sockfd, req_envelope* envelope) {
@@ -268,35 +293,33 @@ int main(int argc, char** argv) {
 				int swap = 0;
 				char svalue[64];
 
+        int count = 5;
+
 		    while (1) {
 						cout << "#####################################" << endl;
 						//srand(time(NULL) + get_random(1234));
 		        kidx = get_random(100000);
 
+						//rand_string(svalue, 16);
 						rand_string(svalue, 64);
 
 		        std::string key = std::to_string(kidx);
 		        std::string value = svalue;
 
-            //if (burst_mode)
-		            //sleep(get_random(30));
-		        //if (!burst_mode || (burst_mode && (swap++ == 5))) {
-		            //printf("send first message: %s\n", key.c_str());
-		            setRequest(fd, key, value);
-                //if (burst_mode)
-								//    sleep(get_random(60));
-								//else
-								//		sleep(1);
-								//swap = 0;
-		        //}
+		        //while (setRequest(fd, key, value) != 0) {
+            //    usleep(100);
+            //}
 
-		        getRequest(fd, key);
+		        while (getRequest(fd, key) != 0) {
+                usleep(100);
+            }
 
             //if (burst_mode)
-		        //    sleep(get_random(60));
-						//else
-            if (burst_mode)
-								sleep(1);
+								//sleep(10);
+                //sleep(get_random(60));
+
+            //if (!--count)
+            //    break;
 				}
 		}
     close(fd);

@@ -64,7 +64,7 @@ int TCPAcceptor::start()
         return result;
     }
 
-    result = listen(m_lsd, 100);
+    result = listen(m_lsd, 100000);
     if (result != 0) {
         perror("listen() failed");
         return result;

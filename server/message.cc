@@ -53,8 +53,6 @@ MessageHandler::MessageHandler() {
 }
 
 MessageHandler::~MessageHandler() {
-    delete m_database;
-    delete m_message;
 }
 
 Message* MessageHandler::getMessage() {
@@ -91,23 +89,15 @@ int MessageHandler::handler() {
     int err;
 
     m_message->setState(Message::state_t::processing);
-
+#if 0
     printf("type: %i\n", m_message->getType());
     printf("key: %s\n", m_message->getKey().c_str());
     printf("value: %s\n", m_message->getValue().c_str());
-
+#endif
     if (m_message->getType() == msg_type::set) {
         err = m_database->putItem(m_message);
     } else if (m_message->getType() == msg_type::get) {
-        std::string value;
         err = m_database->getItem(m_message);
-
-        if (value.size() > 0) {
-            m_message->setValue(value);
-            err = 0;
-        } else {
-            err = 1;
-        }
     }
 
 	  return err;

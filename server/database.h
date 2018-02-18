@@ -12,6 +12,9 @@
 #include <aws/dynamodb/model/PutItemResult.h>
 #include <aws/dynamodb/model/GetItemRequest.h>
 #include <iostream>
+#include <list>
+#include <memory>
+#include <chrono>
 
 #include <aws/kms/KMSClient.h>
 #include <aws/kms/model/EncryptRequest.h>
@@ -23,6 +26,7 @@
 class Database;
 class DynamoDB;
 class FooDB;
+class QueueItem;
 
 #include "aws_client.h"
 #include "message.h"
@@ -43,6 +47,31 @@ class FooDB: public Database
     void setHandler(MessageHandler* handler) {};
 };
 
+class QueueItem
+{
+  public:
+		enum type_t {
+				put = 0,
+				get = 1
+		};
+
+    QueueItem() {}
+    ~QueueItem() {}
+
+		Message*& getMessage() { return m_message; }
+		void setMessage(Message*& message) { m_message = message; }
+		type_t getType() { return m_type; }
+		void setType(type_t type) { m_type = type; }
+
+    Aws::DynamoDB::Model::PutItemOutcomeCallable putItemOutcome;
+		Aws::DynamoDB::Model::GetItemOutcomeCallable getItemOutcome;
+
+	private:
+		type_t m_type;
+		Message* m_message;
+
+};
+
 class DynamoDB: public Database
 {
     AwsClient *m_awsClient;
@@ -54,6 +83,10 @@ class DynamoDB: public Database
     Message* m_message;
 
     bool m_async;
+
+    pthread_mutex_t  m_mutex;
+    //std::list<QueueItem*> m_queue;
+    Aws::List<QueueItem*> m_queue;
   public:
     DynamoDB(AwsClient* , bool );
     virtual ~DynamoDB();
@@ -73,6 +106,8 @@ class DynamoDB: public Database
                                 const Aws::DynamoDB::Model::GetItemRequest& request,
                                 const Aws::DynamoDB::Model::GetItemOutcome& outcome,
                                 const std::shared_ptr<const  Aws::Client::AsyncCallerContext>& context);
+
+    void consume();
 
 };
 #endif
