@@ -87,6 +87,7 @@ class DynamoDB: public Database
     pthread_mutex_t  m_mutex;
     //std::list<QueueItem*> m_queue;
     Aws::List<QueueItem*> m_queue;
+    static DynamoDB* m_instance;
   public:
     DynamoDB(AwsClient* , bool );
     virtual ~DynamoDB();
@@ -108,6 +109,7 @@ class DynamoDB: public Database
                                 const std::shared_ptr<const  Aws::Client::AsyncCallerContext>& context);
 
     void consume();
+    static DynamoDB* instance(AwsClient* , bool );
 
 };
 #endif

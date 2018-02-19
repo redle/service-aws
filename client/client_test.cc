@@ -131,6 +131,9 @@ int read_body(int sockfd, google::protobuf::uint32 siz) {
         }
     }
     break;
+    case req_envelope::set_request_t:
+    case req_envelope::get_request_t:
+    break;
   }
 
   return err;
@@ -290,10 +293,7 @@ int main(int argc, char** argv) {
 				getRequest(fd, key);
 		} else if (test_mode) {
 		    int kidx;
-				int swap = 0;
 				char svalue[64];
-
-        int count = 5;
 
 		    while (1) {
 						cout << "#####################################" << endl;
@@ -306,20 +306,16 @@ int main(int argc, char** argv) {
 		        std::string key = std::to_string(kidx);
 		        std::string value = svalue;
 
-		        //while (setRequest(fd, key, value) != 0) {
-            //    usleep(100);
-            //}
+		        while (setRequest(fd, key, value) != 0) {
+                usleep(100);
+            }
 
 		        while (getRequest(fd, key) != 0) {
                 usleep(100);
             }
 
-            //if (burst_mode)
-								//sleep(10);
-                //sleep(get_random(60));
-
-            //if (!--count)
-            //    break;
+            if (!burst_mode)
+								sleep(1);
 				}
 		}
     close(fd);

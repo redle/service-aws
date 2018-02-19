@@ -104,19 +104,29 @@ wqueue<WorkItem*> feedback;
 class ConnectionMessageHandler : public Thread
 {
     wqueue<WorkItemMessage*>& m_queue;
+		int m_number;
 
   public:
-    ConnectionMessageHandler(wqueue<WorkItemMessage*>& queue) : m_queue(queue) {}
+    ConnectionMessageHandler(wqueue<WorkItemMessage*>& queue, int number) : m_queue(queue), m_number(number) {}
 
     void* run() {
 				int err;
         AwsClient *awsClient = AwsClient::instance();
 				/*Create a object poll to reuse old objects*/
-        DynamoDB *database = new DynamoDB(awsClient, true);
+        DynamoDB *database = DynamoDB::instance(awsClient, true);
         //FooDB *database;
 				MessageHandler *msg_handler;
 				WorkItemMessage* item;
-
+#if 0
+				if (m_number == 1) {
+						printf("worker database\n");
+		        for (int i = 0;; i++) {
+								database->consume();
+								usleep(10);
+						}
+				}
+#endif
+				printf("worker message\n");
         for (int i = 0;; i++) {
             //printf("thread %lu, loop %d - waiting for item... size:%i\n", (long unsigned int)self(), i, m_queue.size());
             item = m_queue.remove();
@@ -126,7 +136,7 @@ class ConnectionMessageHandler : public Thread
 
 						switch (item->getMessage()->getState()) {
 								case (Message::state_t::pending): {
-										//printf("Message -> pending\n");
+										printf("Message -> pending (%s)\n", item->getMessage()->getKey().c_str());
 										//item->m_database = new DynamoDB(awsClient, true);
 										//item->m_database = new FooDB();
 									  //item->m_handler = new MessageHandler(item->m_database);
@@ -134,6 +144,7 @@ class ConnectionMessageHandler : public Thread
 										//msg_handler = new MessageHandler();
 								    //item->m_handler->setStream(item->getStream());
 								    item->m_handler->setMessage(item->getMessage());
+								    item->getMessage()->setStream(item->getStream());
 										//msg_handler->getMessage();
 
 				            err = item->m_handler->handler();
@@ -146,24 +157,20 @@ class ConnectionMessageHandler : public Thread
 								}
 								break;
 								case (Message::state_t::processing): {
-										//printf("Message -> processing\n");
+										printf("Message -> processing (%s)\n", item->getMessage()->getKey().c_str());
 										m_queue.add(item);
 								}
 								break;
 								case (Message::state_t::ready): {
-										//printf("Message -> ready\n");
-										Protocol::response(item->getStream(), item->getMessage());
+										printf("Message -> ready (%s)\n", item->getMessage()->getKey().c_str());
+										//Protocol::response(item->getStream(), item->getMessage());
 										delete item;
 								}
 								break;
 						}
 
-						usleep(10);
-						//item->setState(WorkItem::available);
-						//feedback.add(item);
-						//printf(">>>> feedback: %i\n", feedback.size());
+						//usleep(10);
         }
-
 				delete awsClient;
 
         return NULL;
@@ -207,7 +214,7 @@ int main(int argc, char** argv)
     // Create the queue and consumer (worker) threads
     wqueue<WorkItemMessage*> queue;
     for (int i = 0; i < workers; i++) {
-        ConnectionMessageHandler* handler = new ConnectionMessageHandler(queue);
+        ConnectionMessageHandler* handler = new ConnectionMessageHandler(queue, i);
         if (!handler) {
             printf("Could not create ConnectionHandler %d\n", i);
             exit(1);
@@ -336,6 +343,7 @@ int main(int argc, char** argv)
 			          client_socket = fds[i].fd;
 
 								message = new Message();
+								printf("Extracting message -> sock:%i ip:%s\n", client_socket, connection->getPeerIP().c_str());
 								int err = Protocol::getMessage(connection, message);
 								if (err) {
 										num_clients--;
@@ -354,29 +362,7 @@ int main(int argc, char** argv)
 								    fds[i].fd = -1;
                     continue;
                 }
-#if 0
-							  printf(">>>>> item -> %i-%i\n", fds[i].fd, item->getState());
-							  if (item->getState() != WorkItem::available) {
-									  printf(">>>>> Already added in queue\n");
-									  continue;
-							  }
-							  /*IMPROVE THIS.....*/
-							  printf("Added client on queue\n");
-							  item->setState(WorkItem::pending);
-#endif
-							  //queue.add(clients[fds[i].fd]);
-							  //printf("removed -> %i %i\n", item->getFds(), item->getStream()->getSD());
-							  //fds[i].fd = -1;
 				   }
-
-#if 0
-        item = new WorkItem(connection);
-        if (!item) {
-            printf("Could not create work item a connection\n");
-            continue;
-        }
-        queue.add(item);
-#endif
 				}
 
     }

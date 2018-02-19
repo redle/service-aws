@@ -14,6 +14,8 @@ int FooDB::putItem(Message*& message) {
     return 0;
 }
 
+DynamoDB* DynamoDB::m_instance = 0;
+
 DynamoDB::DynamoDB(AwsClient* awsClient, bool async = true) {
     m_awsClient = awsClient;
     m_table = "data";
@@ -276,6 +278,8 @@ void DynamoDB::consume() {
 
     Aws::List<QueueItem*>::iterator it = m_queue.begin();
 
+    int count = 0;
+
     while ( it != m_queue.end()) {
         //pthread_mutex_lock(&m_mutex);
         item = *it;
@@ -284,6 +288,8 @@ void DynamoDB::consume() {
         //item = m_queue.front();
         //m_queue.pop_front();
         //pthread_mutex_unlock(&m_mutex);
+
+		    printf("Queue consume size:%li - %s (%i)\n", m_queue.size(), item->getMessage()->getKey().c_str(), count++);
 
         std::future_status status;
 
@@ -296,11 +302,13 @@ void DynamoDB::consume() {
             //std::cout << "deferred\n";
 				    //m_queue.push_back(item);
             //break;
+            it++;
             continue;
         } else if (status == std::future_status::timeout) {
             //std::cout << "timeout\n";
 				    //m_queue.push_back(item);
             //break;
+            it++;
             continue;
         } else if (status == std::future_status::ready) {
             //std::cout << "ready!\n";
@@ -308,7 +316,6 @@ void DynamoDB::consume() {
 				    switch (item->getType()) {
 						    case QueueItem::type_t::put: {
 								    item->getMessage()->setError(msg_error::ok);
-								    item->getMessage()->setState(Message::state_t::ready);
 
 				            Aws::DynamoDB::Model::PutItemOutcome putItemOutcome = item->putItemOutcome.get();
 
@@ -316,6 +323,9 @@ void DynamoDB::consume() {
                         std::cout << "ERROR: putItem key:" + item->getMessage()->getKey() << " - " << putItemOutcome.GetError().GetMessage() << std::endl;
 								        item->getMessage()->setError(msg_error::fail);
                     }
+
+										Protocol::response(item->getMessage()->getStream(), item->getMessage());
+								    item->getMessage()->setState(Message::state_t::ready);
                 }
 						    break;
 
@@ -346,11 +356,17 @@ void DynamoDB::consume() {
 
 						        item->getMessage()->setValue(value);
 						        item->getMessage()->setError(err);
+
+										Protocol::response(item->getMessage()->getStream(), item->getMessage());
 						        item->getMessage()->setState(Message::state_t::ready);
                 }
 						    break;
 				    }
-            m_queue.erase(it++);
+            printf("Queue consume size: ready\n");
+            pthread_mutex_lock(&m_mutex);
+//            m_queue.erase(it++);
+            m_queue.erase(it);
+            pthread_mutex_unlock(&m_mutex);
 				    delete item;
 //            continue;
           break;
@@ -379,4 +395,12 @@ void DynamoDB::consume() {
 int DynamoDB::putItemHandle(Message*& message) {
     //std::future<int> resultFromDB = std::async(std::launch::async, DynamoDB::putItem, message);
     return 0;
+}
+
+DynamoDB* DynamoDB::instance(AwsClient* awsClient, bool async = true) {
+    if (!m_instance) {
+        m_instance = new DynamoDB(awsClient, async);
+    }
+
+    return m_instance;
 }

@@ -50,6 +50,8 @@ class Message {
     std::string getValue();
     void setState(state_t state );
     state_t getState();
+    void setStream(TCPStream* stream) { m_stream = stream; };
+    TCPStream* getStream() { return m_stream; };
 };
 
 class MessageHandler {

@@ -66,6 +66,10 @@ template <typename T> class wqueue
         pthread_mutex_unlock(&m_mutex);
         return size;
     }
+
+    list<T>& getQueue() {
+        return m_queue;
+    }
 };
 
 #endif
