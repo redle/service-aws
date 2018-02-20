@@ -78,10 +78,7 @@ class WorkItemMessage
   public:
     WorkItemMessage(TCPStream* stream, Message* message) : m_stream(stream), m_message(message) {}
     ~WorkItemMessage() {
-				//delete m_stream;
 				delete m_message;
-
-				//delete m_database;
 				delete m_handler;
 		}
 
@@ -99,8 +96,6 @@ class WorkItemMessage
 		MessageHandler* m_handler;
 };
 
-wqueue<WorkItem*> feedback;
-
 class ConnectionMessageHandler : public Thread
 {
     wqueue<WorkItemMessage*>& m_queue;
@@ -111,41 +106,19 @@ class ConnectionMessageHandler : public Thread
 
     void* run() {
 				int err;
-        AwsClient *awsClient = AwsClient::instance();
-				/*Create a object poll to reuse old objects*/
-        DynamoDB *database = DynamoDB::instance(awsClient, true);
-        //FooDB *database;
-				MessageHandler *msg_handler;
 				WorkItemMessage* item;
-#if 0
-				if (m_number == 1) {
-						printf("worker database\n");
-		        for (int i = 0;; i++) {
-								database->consume();
-								usleep(10);
-						}
-				}
-#endif
-				printf("worker message\n");
+
         for (int i = 0;; i++) {
             //printf("thread %lu, loop %d - waiting for item... size:%i\n", (long unsigned int)self(), i, m_queue.size());
             item = m_queue.remove();
             //printf("thread %lu, loop %d - got one item -> size:%i\n", (long unsigned int)self(), i, m_queue.size());
 
-						database->consume();
-
 						switch (item->getMessage()->getState()) {
 								case (Message::state_t::pending): {
-										printf("Message -> pending (%s)\n", item->getMessage()->getKey().c_str());
-										//item->m_database = new DynamoDB(awsClient, true);
-										//item->m_database = new FooDB();
-									  //item->m_handler = new MessageHandler(item->m_database);
-									  item->m_handler = new MessageHandler(database);
-										//msg_handler = new MessageHandler();
-								    //item->m_handler->setStream(item->getStream());
+										//printf("Message -> pending (%s)\n", item->getMessage()->getKey().c_str());
+									  item->m_handler = new MessageHandler();
 								    item->m_handler->setMessage(item->getMessage());
-								    item->getMessage()->setStream(item->getStream());
-										//msg_handler->getMessage();
+								    item->m_handler->setStream(item->getStream());
 
 				            err = item->m_handler->handler();
 										if (err) {
@@ -157,22 +130,21 @@ class ConnectionMessageHandler : public Thread
 								}
 								break;
 								case (Message::state_t::processing): {
-										printf("Message -> processing (%s)\n", item->getMessage()->getKey().c_str());
+										//printf("Message -> processing (%s)\n", item->getMessage()->getKey().c_str());
+				            err = item->m_handler->handler();
 										m_queue.add(item);
 								}
 								break;
 								case (Message::state_t::ready): {
-										printf("Message -> ready (%s)\n", item->getMessage()->getKey().c_str());
+										//printf("Message -> ready (%s)\n", item->getMessage()->getKey().c_str());
 										//Protocol::response(item->getStream(), item->getMessage());
 										delete item;
 								}
 								break;
 						}
 
-						//usleep(10);
+						usleep(10);
         }
-				delete awsClient;
-
         return NULL;
     }
 };
@@ -202,7 +174,7 @@ int main(int argc, char** argv)
         exit(-1);
     }
     //int workers = atoi(argv[1]);
-    int workers = 1;
+    int workers = 2;
     int port = atoi(argv[1]);
     string ip;
     if (argc == 3) {
@@ -240,7 +212,6 @@ int main(int argc, char** argv)
     }
 
     TCPStream* connection = NULL;
-    int num_cli = 0;
     int server_socket = 0;
     int client_socket = 0;
 
@@ -254,8 +225,6 @@ int main(int argc, char** argv)
     max_sd = server_socket;
     FD_SET(max_sd, &readfds);
 
-    //std::list<WorkItem*> clients;
-		//std::vector<WorkItem*> clients;
 		std::map<int, WorkItem*> clients;
 
 		int activity;
@@ -281,12 +250,6 @@ int main(int argc, char** argv)
 						break;
         }
 
-				while (feedback.size() > 0) {
-						item = feedback.remove();
-						printf("added again -> %i %i\n", item->getFds(), item->getStream()->getSD());
-						fds[item->getFds()].fd = item->getStream()->getSD();
-				}
-
 				if (activity == 0) {
 						//printf(">>>>> timeout\n");
 						continue;
@@ -305,8 +268,6 @@ int main(int argc, char** argv)
 						if ((fds[i].fd == server_socket) && (fds[i].revents & POLLIN)) {
 				        client_socket = connectionAcceptor->accept(connection);
 						    if (client_socket == -1) {
-							    //printf("Could not accept a connection\n");
-									//continue;
 									printf("Error, could not accept a new connection\n");
 								}
 
@@ -343,7 +304,7 @@ int main(int argc, char** argv)
 			          client_socket = fds[i].fd;
 
 								message = new Message();
-								printf("Extracting message -> sock:%i ip:%s\n", client_socket, connection->getPeerIP().c_str());
+								//printf("Extracting message -> sock:%i ip:%s\n", client_socket, connection->getPeerIP().c_str());
 								int err = Protocol::getMessage(connection, message);
 								if (err) {
 										num_clients--;

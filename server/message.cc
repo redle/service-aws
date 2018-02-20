@@ -49,7 +49,8 @@ MessageHandler::MessageHandler(Database* database) {
 
 MessageHandler::MessageHandler() {
    m_awsClient = AwsClient::instance();
-   m_database = new DynamoDB(m_awsClient, true);
+   //m_database = new DynamoDB(m_awsClient, true);
+   m_database = DynamoDB::instance(m_awsClient, true);
 }
 
 MessageHandler::~MessageHandler() {
@@ -86,18 +87,32 @@ void MessageHandler::setStream(TCPStream* stream) {
 }
 
 int MessageHandler::handler() {
-    int err;
+    int err = 0;
 
-    m_message->setState(Message::state_t::processing);
-#if 0
-    printf("type: %i\n", m_message->getType());
-    printf("key: %s\n", m_message->getKey().c_str());
-    printf("value: %s\n", m_message->getValue().c_str());
-#endif
-    if (m_message->getType() == msg_type::set) {
-        err = m_database->putItem(m_message);
-    } else if (m_message->getType() == msg_type::get) {
-        err = m_database->getItem(m_message);
+    if (m_message->getState() == Message::state_t::pending) {
+        m_message->setState(Message::state_t::processing);
+
+        if (m_message->getType() == msg_type::set) {
+            m_queue_item = m_database->putItem(m_message);
+        } else if (m_message->getType() == msg_type::get) {
+            m_queue_item = m_database->getItem(m_message);
+        }
+
+    } else if (m_message->getState() == Message::state_t::processing) {
+        DatabaseTask::state_t state;
+
+        state = m_database->consume(m_message, m_queue_item);
+
+        if (state == DatabaseTask::state_t::ready) {
+				    Protocol::response(m_stream, m_message);
+	          m_message->setState(Message::state_t::ready);
+            //printf("Message -> ready - key: %s\n", m_message->getKey().c_str());
+            #if 0
+            printf("type: %i\n", m_message->getType());
+            printf("key: %s\n", m_message->getKey().c_str());
+            printf("value: %s\n", m_message->getValue().c_str());
+            #endif
+        }
     }
 
 	  return err;

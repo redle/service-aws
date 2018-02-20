@@ -4,6 +4,19 @@
 #include <aws/core/Aws.h>
 #include <aws/core/utils/Outcome.h>
 #include <aws/core/client/AsyncCallerContext.h>
+#include <aws/core/client/ClientConfiguration.h>
+#include <aws/core/client/CoreErrors.h>
+#include <aws/core/auth/AWSCredentialsProviderChain.h>
+#include <aws/core/http/HttpTypes.h>
+#include <aws/core/utils/logging/LogMacros.h>
+#include <aws/core/utils/memory/AWSMemory.h>
+#include <aws/core/utils/UnreferencedParam.h>
+#include <aws/core/utils/Outcome.h>
+#include <aws/core/utils/memory/stl/AWSSet.h>
+#include <aws/core/utils/memory/stl/AWSStringStream.h>
+#include <aws/core/utils/ratelimiter/DefaultRateLimiter.h>
+#include <aws/core/utils/threading/Executor.h>
+
 #include <aws/dynamodb/DynamoDBClient.h>
 #include <aws/dynamodb/model/ListTablesRequest.h>
 #include <aws/dynamodb/model/ListTablesResult.h>

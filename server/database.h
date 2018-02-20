@@ -26,40 +26,27 @@
 class Database;
 class DynamoDB;
 class FooDB;
-class QueueItem;
+class DatabaseTask;
 
 #include "aws_client.h"
 #include "message.h"
 
-class Database
-{
-  public:
-    virtual ~Database() {};
-    virtual int getItem(Message*& ) = 0;
-    virtual int putItem(Message*& ) = 0;
-};
-
-class FooDB: public Database
-{
-  public:
-    int getItem(Message*& message);
-    int putItem(Message*& message);
-    void setHandler(MessageHandler* handler) {};
-};
-
-class QueueItem
+class DatabaseTask
 {
   public:
 		enum type_t {
 				put = 0,
 				get = 1
 		};
+    enum state_t {
+        wait = 0,
+        ready = 1,
+        error = 2
+    };
 
-    QueueItem() {}
-    ~QueueItem() {}
+    DatabaseTask() {}
+    ~DatabaseTask() {}
 
-		Message*& getMessage() { return m_message; }
-		void setMessage(Message*& message) { m_message = message; }
 		type_t getType() { return m_type; }
 		void setType(type_t type) { m_type = type; }
 
@@ -72,10 +59,30 @@ class QueueItem
 
 };
 
+class Database
+{
+  public:
+    virtual ~Database() {};
+    virtual DatabaseTask* getItem(Message*& ) = 0;
+    virtual DatabaseTask* putItem(Message*& ) = 0;
+    virtual DatabaseTask::state_t consume(Message*& message, DatabaseTask*&) = 0;
+};
+
+class FooDB: public Database
+{
+  DatabaseTask* m_queue_item;
+  public:
+    DatabaseTask* getItem(Message*& message);
+    DatabaseTask* putItem(Message*& message);
+    void setHandler(MessageHandler* handler) {};
+    DatabaseTask::state_t consume(DatabaseTask*& item) { return DatabaseTask::state_t::ready; };
+};
+
 class DynamoDB: public Database
 {
     AwsClient *m_awsClient;
-    Aws::DynamoDB::DynamoDBClient* m_dynamoClient;
+    //Aws::DynamoDB::DynamoDBClient* m_dynamoClient;
+    static std::shared_ptr<Aws::DynamoDB::DynamoDBClient> m_dynamoClient;
     Aws::KMS::KMSClient* m_kmsClient;
     std::string m_table;
     std::string m_keyid;
@@ -85,8 +92,6 @@ class DynamoDB: public Database
     bool m_async;
 
     pthread_mutex_t  m_mutex;
-    //std::list<QueueItem*> m_queue;
-    Aws::List<QueueItem*> m_queue;
     static DynamoDB* m_instance;
   public:
     DynamoDB(AwsClient* , bool );
@@ -95,20 +100,11 @@ class DynamoDB: public Database
 		void encrypt(std::string plainText, Aws::Utils::ByteBuffer& cipherText);
 		void decrypt(Aws::Utils::ByteBuffer cipherText, std::string& message);
 
-    int getItem(Message*& message);
-    int putItem(Message*& message);
+    DatabaseTask* getItem(Message*& message);
+    DatabaseTask* putItem(Message*& message);
     virtual int putItemHandle(Message*& message);
 
-    void PutItemOutcomeReceived(const Aws::DynamoDB::DynamoDBClient* sender,
-                                const Aws::DynamoDB::Model::PutItemRequest& request,
-                                const Aws::DynamoDB::Model::PutItemOutcome& outcome,
-                                const std::shared_ptr<const  Aws::Client::AsyncCallerContext>& context);
-    void GetItemOutcomeReceived(const Aws::DynamoDB::DynamoDBClient* sender,
-                                const Aws::DynamoDB::Model::GetItemRequest& request,
-                                const Aws::DynamoDB::Model::GetItemOutcome& outcome,
-                                const std::shared_ptr<const  Aws::Client::AsyncCallerContext>& context);
-
-    void consume();
+    DatabaseTask::state_t consume(Message*& message, DatabaseTask*&);
     static DynamoDB* instance(AwsClient* , bool );
 
 };

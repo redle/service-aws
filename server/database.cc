@@ -1,20 +1,21 @@
 #include <future>
 #include "database.h"
 
-int FooDB::getItem(Message*& message) {
+DatabaseTask* FooDB::getItem(Message*& message) {
     message->setValue("TEST FIXED\n");
     message->setError(msg_error::ok);
     message->setState(Message::state_t::ready);
-    return 0;
+    return m_queue_item;
 }
 
-int FooDB::putItem(Message*& message) {
+DatabaseTask* FooDB::putItem(Message*& message) {
     message->setError(msg_error::ok);
     message->setState(Message::state_t::ready);
-    return 0;
+    return m_queue_item;
 }
 
 DynamoDB* DynamoDB::m_instance = 0;
+std::shared_ptr<Aws::DynamoDB::DynamoDBClient> DynamoDB::m_dynamoClient = 0;
 
 DynamoDB::DynamoDB(AwsClient* awsClient, bool async = true) {
     m_awsClient = awsClient;
@@ -22,71 +23,15 @@ DynamoDB::DynamoDB(AwsClient* awsClient, bool async = true) {
     m_async = async;
     char *env_arnkey = getenv("AWS_ARN_ENCRYPT_KEY");
     m_keyid = env_arnkey;
-    m_dynamoClient = new Aws::DynamoDB::DynamoDBClient(m_awsClient->getClientConfig());
-    //m_kmsClient =  new Aws::KMS::KMSClient(m_awsClient->getClientConfig());
+    //m_dynamoClient = new Aws::DynamoDB::DynamoDBClient(m_awsClient->getClientConfig());
+    m_dynamoClient = Aws::MakeShared<Aws::DynamoDB::DynamoDBClient>("MCAWSSERVICE", m_awsClient->getClientConfig());
+
 
     pthread_mutex_init(&m_mutex, NULL);
 }
 
 DynamoDB::~DynamoDB() {
-    delete m_dynamoClient;
-    //delete m_kmsClient;
-}
-
-void DynamoDB::PutItemOutcomeReceived(const Aws::DynamoDB::DynamoDBClient* sender,
-                                      const Aws::DynamoDB::Model::PutItemRequest& request,
-                                      const Aws::DynamoDB::Model::PutItemOutcome& outcome,
-                                      const std::shared_ptr<const  Aws::Client::AsyncCallerContext>& context) {
-    AWS_UNREFERENCED_PARAM(sender);
-    AWS_UNREFERENCED_PARAM(request);
-    AWS_UNREFERENCED_PARAM(context);
-
-    msg_error err;
-
-    err = msg_error::ok;
-
-    if (!outcome.IsSuccess()) {
-        std::cout << outcome.GetError().GetMessage() << std::endl;
-        err = msg_error::fail;
-    }
-
-    std::cout << "ASYNC: put item done!" << std::endl;
-
-		printf(">>>>>> PutItemOutcomeReceived\n");
-
-    m_message->setError(err);
-    m_message->setState(Message::state_t::ready);
-}
-
-void DynamoDB::GetItemOutcomeReceived(const Aws::DynamoDB::DynamoDBClient* sender,
-                            const Aws::DynamoDB::Model::GetItemRequest& request,
-                            const Aws::DynamoDB::Model::GetItemOutcome& outcome,
-                            const std::shared_ptr<const  Aws::Client::AsyncCallerContext>& context) {
-    msg_error err;
-
-    AWS_UNREFERENCED_PARAM(sender);
-    AWS_UNREFERENCED_PARAM(request);
-    AWS_UNREFERENCED_PARAM(context);
-
-    err = msg_error::not_found;
-    std::string value;
-
-    value.clear();
-
-    const Aws::Map<Aws::String, Aws::DynamoDB::Model::AttributeValue>& item = outcome.GetResult().GetItem();
-    if (item.size() > 0) {
-        err = msg_error::ok;
-		    value = item.find("value")->second.GetS().c_str();
-    }
-
-#if 0
-		Aws::Utils::ByteBuffer cipherText = item.find("value")->second.GetB();
-		decrypt(cipherText, value);
-#endif
-
-    m_message->setValue(value);
-    m_message->setError(err);
-    m_message->setState(Message::state_t::ready);
+    //delete m_dynamoClient;
 }
 
 void DynamoDB::encrypt(std::string plainText, Aws::Utils::ByteBuffer& cipherText) {
@@ -143,7 +88,7 @@ void DynamoDB::decrypt(Aws::Utils::ByteBuffer cipherText, std::string& message) 
 		message = msg;
 }
 
-int DynamoDB::getItem(Message*& message) {
+DatabaseTask* DynamoDB::getItem(Message*& message) {
     m_message = message;
     std::string key = message->getKey();
 		std::string value;
@@ -156,57 +101,14 @@ int DynamoDB::getItem(Message*& message) {
     getItemRequest.AddKey("key", haskKey);
     getItemRequest.SetTableName(m_table.c_str());
 
-#if 0
-    if (m_async) {
-        auto getItemHandler = std::bind(&DynamoDB::GetItemOutcomeReceived, this, std::placeholders::_1, std::placeholders::_2,
-                                        std::placeholders::_3, std::placeholders::_4);
-        m_dynamoClient->GetItemAsync(getItemRequest, getItemHandler);
-
-        return 0;
-    }
-#endif
-
-    QueueItem* item = new QueueItem();
-    item->setMessage(message);
-
+    DatabaseTask* item = new DatabaseTask();
     item->getItemOutcome = m_dynamoClient->GetItemCallable(getItemRequest);
-		item->setType(QueueItem::type_t::get);
+		item->setType(DatabaseTask::type_t::get);
 
-    pthread_mutex_lock(&m_mutex);
-    m_queue.push_back(item);
-    pthread_mutex_unlock(&m_mutex);
-
-		return 0;
-#if 0
-    /* Sync */
-    value.clear();
-    const Aws::DynamoDB::Model::GetItemOutcome& result = m_dynamoClient->GetItem(getItemRequest);
-    if (!result.IsSuccess()) {
-        //std::cout << "Failed to get item: " << result.GetError().GetMessage() << endl;
-        return -1;
-    }
-
-    const Aws::Map<Aws::String, Aws::DynamoDB::Model::AttributeValue>& item = result.GetResult().GetItem();
-    if (item.size() == 0) {
-        //std::cout << "No item found with the key " << key << std::endl;
-        return 1;
-    }
-#endif
-
-#if 0
-		Aws::Utils::ByteBuffer cipherText = item.find("value")->second.GetB();
-		decrypt(cipherText, value);
-#endif
-
-#if 0
-		value = item.find("value")->second.GetS().c_str();
-		message->setValue(value.c_str());
-#endif
-
-    return 0;
+		return item;
 }
 
-int DynamoDB::putItem(Message*& message) {
+DatabaseTask* DynamoDB::putItem(Message*& message) {
 
     m_message = message;
 
@@ -232,164 +134,78 @@ int DynamoDB::putItem(Message*& message) {
     putItemRequest.AddItem("key", akey);
     putItemRequest.AddItem("value", aencrypt);
 
-    QueueItem* item = new QueueItem();
-    item->setMessage(message);
-
+    DatabaseTask* item = new DatabaseTask();
     item->putItemOutcome = m_dynamoClient->PutItemCallable(putItemRequest);
-		item->setType(QueueItem::type_t::put);
+		item->setType(DatabaseTask::type_t::put);
 
-    pthread_mutex_lock(&m_mutex);
-    m_queue.push_back(item);
-    pthread_mutex_unlock(&m_mutex);
-
-    return 0;
-
-#if 0
-    if (m_async) {
-        auto putItemHandler = std::bind(&DynamoDB::PutItemOutcomeReceived, this, std::placeholders::_1, std::placeholders::_2,
-														            std::placeholders::_3, std::placeholders::_4);
-
-        m_dynamoClient->PutItemAsync(putItemRequest, putItemHandler);
-
-        return 0;
-    }
-#endif
-
-    /* Sync */
-    const Aws::DynamoDB::Model::PutItemOutcome result = m_dynamoClient->PutItem(putItemRequest);
-    if (!result.IsSuccess()) {
-        std::cout << result.GetError().GetMessage() << std::endl;
-        return -1;
-    }
-    std::cout << "SYNC: put item done!" << std::endl;
-
-    return 0;
+    return item;
 }
 
-void DynamoDB::consume() {
+DatabaseTask::state_t DynamoDB::consume(Message*& message, DatabaseTask*& item) {
 
-		//printf("Queue consume size:%li\n", m_queue.size());
+		//printf("DB Task Consume\n");
 
-    if (m_queue.size() == 0) {
-        return;
-    }
+    std::future_status status;
 
-    QueueItem* item;
+		if (item->getType() == DatabaseTask::type_t::put)
+        status = item->putItemOutcome.wait_for(std::chrono::seconds(0));
+    else
+		    status = item->getItemOutcome.wait_for(std::chrono::seconds(0));
 
-    Aws::List<QueueItem*>::iterator it = m_queue.begin();
+    if (status == std::future_status::deferred) {
+        //std::cout << "deferred\n";
+        return DatabaseTask::state_t::wait;
+    } else if (status == std::future_status::timeout) {
+        //std::cout << "timeout\n";
+        return DatabaseTask::state_t::wait;
+    } else if (status == std::future_status::ready) {
+        //std::cout << "ready!\n";
 
-    int count = 0;
+        switch (item->getType()) {
+		        case DatabaseTask::type_t::put: {
+				        message->setError(msg_error::ok);
 
-    while ( it != m_queue.end()) {
-        //pthread_mutex_lock(&m_mutex);
-        item = *it;
-//        item = m_queue.front();
-//        m_queue.pop_front();
-        //item = m_queue.front();
-        //m_queue.pop_front();
-        //pthread_mutex_unlock(&m_mutex);
+				        Aws::DynamoDB::Model::PutItemOutcome putItemOutcome = item->putItemOutcome.get();
 
-		    printf("Queue consume size:%li - %s (%i)\n", m_queue.size(), item->getMessage()->getKey().c_str(), count++);
-
-        std::future_status status;
-
-		    if (item->getType() == QueueItem::type_t::put)
-				    status = item->putItemOutcome.wait_for(std::chrono::seconds(0));
-		    else
-				    status = item->getItemOutcome.wait_for(std::chrono::seconds(0));
-
-        if (status == std::future_status::deferred) {
-            //std::cout << "deferred\n";
-				    //m_queue.push_back(item);
-            //break;
-            it++;
-            continue;
-        } else if (status == std::future_status::timeout) {
-            //std::cout << "timeout\n";
-				    //m_queue.push_back(item);
-            //break;
-            it++;
-            continue;
-        } else if (status == std::future_status::ready) {
-            //std::cout << "ready!\n";
-
-				    switch (item->getType()) {
-						    case QueueItem::type_t::put: {
-								    item->getMessage()->setError(msg_error::ok);
-
-				            Aws::DynamoDB::Model::PutItemOutcome putItemOutcome = item->putItemOutcome.get();
-
-                    if (!putItemOutcome.IsSuccess()) {
-                        std::cout << "ERROR: putItem key:" + item->getMessage()->getKey() << " - " << putItemOutcome.GetError().GetMessage() << std::endl;
-								        item->getMessage()->setError(msg_error::fail);
-                    }
-
-										Protocol::response(item->getMessage()->getStream(), item->getMessage());
-								    item->getMessage()->setState(Message::state_t::ready);
+                if (!putItemOutcome.IsSuccess()) {
+                    std::cout << "ERROR: putItem key:" + message->getKey() << " - " << putItemOutcome.GetError().GetMessage() << std::endl;
+								    message->setError(msg_error::fail);
                 }
-						    break;
+            }
+				    break;
 
-						    case QueueItem::type_t::get: {
-								    msg_error err;
-								    err = msg_error::not_found;
-						        std::string value;
+				    case DatabaseTask::type_t::get: {
+				        msg_error err;
+						    err = msg_error::not_found;
+						    std::string value;
 
-						        value.clear();
+						    value.clear();
 
-				            Aws::DynamoDB::Model::GetItemOutcome getItemOutcome = item->getItemOutcome.get();
+				        Aws::DynamoDB::Model::GetItemOutcome getItemOutcome = item->getItemOutcome.get();
 
-                    if (!getItemOutcome.IsSuccess()) {
-                        std::cout << "ERROR: getItem key:" + item->getMessage()->getKey() << " - " << getItemOutcome.GetError().GetMessage() << std::endl;
-								        item->getMessage()->setError(msg_error::fail);
-                    }
-
-						        const Aws::Map<Aws::String, Aws::DynamoDB::Model::AttributeValue>& tuple = getItemOutcome.GetResult().GetItem();
-						        if (tuple.size() > 0) {
-						            err = msg_error::ok;
-								        value = tuple.find("value")->second.GetS().c_str();
-						        }
-
-								    #if 0
-								    Aws::Utils::ByteBuffer cipherText = item.find("value")->second.GetB();
-								    decrypt(cipherText, value);
-								    #endif
-
-						        item->getMessage()->setValue(value);
-						        item->getMessage()->setError(err);
-
-										Protocol::response(item->getMessage()->getStream(), item->getMessage());
-						        item->getMessage()->setState(Message::state_t::ready);
+                if (!getItemOutcome.IsSuccess()) {
+                    std::cout << "ERROR: getItem key:" + message->getKey() << " - " << getItemOutcome.GetError().GetMessage() << std::endl;
+								    message->setError(msg_error::fail);
                 }
-						    break;
-				    }
-            printf("Queue consume size: ready\n");
-            pthread_mutex_lock(&m_mutex);
-//            m_queue.erase(it++);
-            m_queue.erase(it);
-            pthread_mutex_unlock(&m_mutex);
-				    delete item;
-//            continue;
-          break;
+
+						    const Aws::Map<Aws::String, Aws::DynamoDB::Model::AttributeValue>& tuple = getItemOutcome.GetResult().GetItem();
+						    if (tuple.size() > 0) {
+						        err = msg_error::ok;
+								    value = tuple.find("value")->second.GetS().c_str();
+						    }
+
+						    #if 0
+						    Aws::Utils::ByteBuffer cipherText = item.find("value")->second.GetB();
+						    decrypt(cipherText, value);
+						    #endif
+						    message->setValue(value);
+						    message->setError(err);
+            }
+				    break;
         }
-        ++it;
-    }
-		return;
-
-    msg_error err;
-    err = msg_error::ok;
-#if 0
-    if (!outcome.IsSuccess()) {
-        std::cout << outcome.GetError().GetMessage() << std::endl;
-        err = msg_error::fail;
     }
 
-    std::cout << "ASYNC: put item done!" << std::endl;
-
-		printf(">>>>>> PutItemOutcomeReceived\n");
-#endif
-    m_message->setError(err);
-    m_message->setState(Message::state_t::ready);
-
+		return DatabaseTask::state_t::ready;
 }
 
 int DynamoDB::putItemHandle(Message*& message) {

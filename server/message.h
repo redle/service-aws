@@ -26,7 +26,6 @@ class Message {
 		};
 
   private:
-    TCPStream* m_stream;
     msg_type m_type;
     msg_error m_error;
 
@@ -35,7 +34,6 @@ class Message {
     state_t m_state;
 
   public:
-    Message(TCPStream* stream) : m_stream(stream), m_type(msg_type::unknown), m_error(msg_error::fail), m_state(state_t::pending) {}
     Message() : m_type(msg_type::unknown), m_error(msg_error::fail), m_state(state_t::pending) {}
     ~Message();
     void setError(msg_error );
@@ -50,15 +48,14 @@ class Message {
     std::string getValue();
     void setState(state_t state );
     state_t getState();
-    void setStream(TCPStream* stream) { m_stream = stream; };
-    TCPStream* getStream() { return m_stream; };
 };
 
 class MessageHandler {
     TCPStream* m_stream;
-    Database *m_database;
-    Message *m_message;
-    AwsClient *m_awsClient;
+    Database* m_database;
+    Message* m_message;
+    DatabaseTask* m_queue_item;
+    AwsClient* m_awsClient;
   public:
     MessageHandler();
     MessageHandler(Database* );
