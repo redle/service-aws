@@ -19,7 +19,7 @@ AwsClient::AwsClient() {
     //m_clientConfig.readRateLimiter = Aws::MakeShared<Aws::Utils::RateLimits::DefaultRateLimiter<>>("MCAWSSERVICE", 200000);
     //m_clientConfig.writeRateLimiter = Aws::MakeShared<Aws::Utils::RateLimits::DefaultRateLimiter<>>("MCAWSSERVICE", 200000);
     m_clientConfig.httpLibOverride = Aws::Http::TransferLibType::DEFAULT_CLIENT;
-    m_clientConfig.executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>("MCAWSSERVICE", 128);
+    m_clientConfig.executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>("MCAWSSERVICE", 64);
 }
 
 AwsClient* AwsClient::instance() {

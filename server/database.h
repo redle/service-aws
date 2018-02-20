@@ -81,7 +81,6 @@ class FooDB: public Database
 class DynamoDB: public Database
 {
     AwsClient *m_awsClient;
-    //Aws::DynamoDB::DynamoDBClient* m_dynamoClient;
     static std::shared_ptr<Aws::DynamoDB::DynamoDBClient> m_dynamoClient;
     Aws::KMS::KMSClient* m_kmsClient;
     std::string m_table;

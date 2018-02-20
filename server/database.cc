@@ -160,7 +160,6 @@ DatabaseTask::state_t DynamoDB::consume(Message*& message, DatabaseTask*& item) 
         return DatabaseTask::state_t::wait;
     } else if (status == std::future_status::ready) {
         //std::cout << "ready!\n";
-
         switch (item->getType()) {
 		        case DatabaseTask::type_t::put: {
 				        message->setError(msg_error::ok);
@@ -204,6 +203,8 @@ DatabaseTask::state_t DynamoDB::consume(Message*& message, DatabaseTask*& item) 
 				    break;
         }
     }
+
+    delete item;
 
 		return DatabaseTask::state_t::ready;
 }
