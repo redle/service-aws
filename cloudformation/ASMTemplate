@@ -660,7 +660,8 @@
                                 },
                                 "' >> /home/admin/.bash_profile\n",
                                 "echo 'export LD_LIBRARY_PATH=~/lib/' >> /home/admin/.bash_profile\n",
-                                "wget https://s3-sa-east-1.amazonaws.com/cf-templates-1xfihe3xbn354-sa-east-1/service-0.0.1.tar -O /home/admin/service.tar\n",
+                                "echo 'ulimit -n 10240' >> /home/admin/.bash_profile\n",
+                                "wget https://s3-sa-east-1.amazonaws.com/cf-templates-1xfihe3xbn354-sa-east-1/service-0.0.2.tar -O /home/admin/service.tar\n",
                                 "tar xf /home/admin/service.tar -C /home/admin/\n",
                                 "rm /home/admin/service.tar\n",
                                 "chown admin.admin /home/admin/* -R\n"
