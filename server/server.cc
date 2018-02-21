@@ -166,16 +166,16 @@ int main(int argc, char** argv)
         DEBUG_MODE=1;
     }
 
-    if ( argc < 2 || argc > 3 ) {
-        printf("usage: %s <port> <ip>\n", argv[0]);
+    if ( argc < 2 || argc > 4 ) {
+        printf("usage: %s <port> <worker> <ip>\n", argv[0]);
         exit(-1);
     }
     //int workers = atoi(argv[1]);
-    int workers = 2;
+    int workers = atoi(argv[2]);
     int port = atoi(argv[1]);
     string ip;
-    if (argc == 3) {
-        ip = argv[2];
+    if (argc == 4) {
+        ip = argv[3];
     }
 
     signal(SIGPIPE, SIG_IGN);
