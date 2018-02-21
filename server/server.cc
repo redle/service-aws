@@ -49,101 +49,98 @@ int DEBUG_MODE = 0;
 class WorkItem
 {
     TCPStream* m_stream;
-		int m_state;
-		int m_fds;
+        int m_state;
+        int m_fds;
 
   public:
     WorkItem(TCPStream* stream) : m_stream(stream) {}
     ~WorkItem() { delete m_stream; }
 
-		int getState() { return m_state; }
-		void setState(int state) { m_state = state; }
-		int getFds() { return m_fds; }
-		void setFds(int fds) { m_fds = fds; }
+    int getState() { return m_state; }
+    void setState(int state) { m_state = state; }
+    int getFds() { return m_fds; }
+    void setFds(int fds) { m_fds = fds; }
     TCPStream* getStream() { return m_stream; }
 
-		enum {
-				processing = 0,
-				pending = 1,
-				available = 2
-		};
+    enum {
+        processing = 0,
+        pending = 1,
+        available = 2
+    };
 };
 
 
 class WorkItemMessage
 {
     TCPStream* m_stream;
-		Message* m_message;
+    Message* m_message;
 
   public:
     WorkItemMessage(TCPStream* stream, Message* message) : m_stream(stream), m_message(message) {}
     ~WorkItemMessage() {
-				delete m_message;
-				delete m_handler;
-		}
+        delete m_message;
+        delete m_handler;
+    }
 
     TCPStream* getStream() { return m_stream; }
-		Message*& getMessage() { return m_message; }
+    Message*& getMessage() { return m_message; }
 
-		enum {
-				processing = 0,
-				pending = 1,
-				available = 2
-		};
+    enum {
+        processing = 0,
+        pending = 1,
+        available = 2
+    };
 
-		DynamoDB* m_database;
-		//FooDB* m_database;
-		MessageHandler* m_handler;
+    DynamoDB* m_database;
+    //FooDB* m_database;
+    MessageHandler* m_handler;
 };
 
 class ConnectionMessageHandler : public Thread
 {
     wqueue<WorkItemMessage*>& m_queue;
-		int m_number;
+    int m_number;
 
   public:
     ConnectionMessageHandler(wqueue<WorkItemMessage*>& queue, int number) : m_queue(queue), m_number(number) {}
 
     void* run() {
-				int err;
-				WorkItemMessage* item;
+        int err;
+        WorkItemMessage* item;
 
         for (int i = 0;; i++) {
             //printf("thread %lu, loop %d - waiting for item... size:%i\n", (long unsigned int)self(), i, m_queue.size());
             item = m_queue.remove();
             //printf("thread %lu, loop %d - got one item -> size:%i\n", (long unsigned int)self(), i, m_queue.size());
 
-						switch (item->getMessage()->getState()) {
-								case (Message::state_t::pending): {
-										//printf("Message -> pending (%s)\n", item->getMessage()->getKey().c_str());
-									  item->m_handler = new MessageHandler();
-								    item->m_handler->setMessage(item->getMessage());
-								    item->m_handler->setStream(item->getStream());
+            switch (item->getMessage()->getState()) {
+                case (Message::state_t::pending): {
+                    //printf("Message -> pending (%s)\n", item->getMessage()->getKey().c_str());
+                    item->m_handler = new MessageHandler();
+                    item->m_handler->setMessage(item->getMessage());
+                    item->m_handler->setStream(item->getStream());
 
-				            err = item->m_handler->handler();
-										if (err) {
-												printf(">>>> Closed\n");
-												//stream->setState(TCPStream::connectionClosed);
-										}
-										//delete msg_handler;
-										m_queue.add(item);
-								}
-								break;
-								case (Message::state_t::processing): {
-										//printf("Message -> processing (%s)\n", item->getMessage()->getKey().c_str());
-				            err = item->m_handler->handler();
-										m_queue.add(item);
-								}
-								break;
-								case (Message::state_t::ready): {
-										//printf("Message -> ready (%s)\n", item->getMessage()->getKey().c_str());
-										//Protocol::response(item->getStream(), item->getMessage());
-										delete item;
-								}
-								break;
-						}
+                    err = item->m_handler->handler();
+                    if (err) {
+                        printf("Closed\n");
+                    }
+                    m_queue.add(item);
+                }
+                break;
 
-						usleep(10);
+                case (Message::state_t::ready): {
+                    //printf("Message -> ready (%s)\n", item->getMessage()->getKey().c_str());
+                    delete item;
+                }
+                break;
+
+                default:
+                    err = item->m_handler->handler();
+                    m_queue.add(item);
+                break;
+            }
+            /* Dont forget to remove this */
+            usleep(10);
         }
         return NULL;
     }
@@ -197,7 +194,7 @@ int main(int argc, char** argv)
     // Create an acceptor then start listening for connections
     WorkItem* item;
     WorkItemMessage* item_message;
-		Message *message;
+    Message *message;
 
     TCPAcceptor* connectionAcceptor;
     if (ip.length() > 0) {
@@ -217,7 +214,6 @@ int main(int argc, char** argv)
 
     int max_sd;
     fd_set working_set, readfds;
-    //fd_set working_set;
 
     server_socket = connectionAcceptor->getSD();
 
@@ -225,106 +221,106 @@ int main(int argc, char** argv)
     max_sd = server_socket;
     FD_SET(max_sd, &readfds);
 
-		std::map<int, WorkItem*> clients;
+    std::map<int, WorkItem*> clients;
 
-		int activity;
+    int activity;
 
-		pollfd fds[50000];
-	  int i, current_size, nfds = 1;
+    pollfd fds[50000];
+    int i, current_size, nfds = 1;
 
-		memset(fds, 0 , sizeof(fds));
+    memset(fds, 0 , sizeof(fds));
 
-		fds[0].fd = server_socket;
-	  fds[0].events = POLLIN;
+    fds[0].fd = server_socket;
+    fds[0].events = POLLIN;
 
-		int num_clients = 0;
+    int num_clients = 0;
 
     while (1) {
-				memcpy(&working_set, &readfds, sizeof(readfds));
+        memcpy(&working_set, &readfds, sizeof(readfds));
 
-				//printf("waiting for clients....\n");
+        //printf("waiting for clients....\n");
 
-				activity = poll(fds, nfds, 100);
+        activity = poll(fds, nfds, 100);
         if (activity < 0) {
             printf("select error");
-						break;
+            break;
         }
 
-				if (activity == 0) {
-						//printf(">>>>> timeout\n");
-						continue;
-				}
+        if (activity == 0) {
+            //printf(">>>>> timeout\n");
+            continue;
+        }
 
-				current_size = nfds;
-		    for (i = 0; i < current_size; i++) {
-					  if (fds[i].revents == 0)
-				        continue;
+        current_size = nfds;
+        for (i = 0; i < current_size; i++) {
+            if (fds[i].revents == 0)
+                continue;
 
-						if(fds[i].revents != POLLIN) {
-				        printf("  Error! revents = (%i) %d\n", i, fds[i].revents);
-								//break;
-						}
+            if(fds[i].revents != POLLIN) {
+                printf("  Error! revents = (%i) %d\n", i, fds[i].revents);
+                //break;
+            }
 
-						if ((fds[i].fd == server_socket) && (fds[i].revents & POLLIN)) {
-				        client_socket = connectionAcceptor->accept(connection);
-						    if (client_socket == -1) {
-									printf("Error, could not accept a new connection\n");
-								}
+            if ((fds[i].fd == server_socket) && (fds[i].revents & POLLIN)) {
+                client_socket = connectionAcceptor->accept(connection);
+                if (client_socket == -1) {
+                    printf("Error, could not accept a new connection\n");
+                }
 
-				        if ((connection != NULL) && (client_socket > 0)) {
+                if ((connection != NULL) && (client_socket > 0)) {
 
-										/*IMPROVE THIS.....*/
-										fds[nfds].fd = client_socket;
-					          fds[nfds].events = POLLIN;
-								    nfds++;
+                    /*IMPROVE THIS.....*/
+                    fds[nfds].fd = client_socket;
+                    fds[nfds].events = POLLIN;
+                    nfds++;
 
-										item = new WorkItem(connection);
-										if (!item) {
-												printf("Could not create work item a connection\n");
-												continue;
-										}
+                    item = new WorkItem(connection);
+                    if (!item) {
+                        printf("Could not create work item a connection\n");
+                        continue;
+                    }
 
-										item->setState(WorkItem::available);
-										/*IMPROVE THIS.....*/
-										item->setFds(nfds-1);
-										clients[client_socket] = item;
-										num_clients++;
-										printf("New client arrived -> sock:%i ip:%s (size:%li) -> %i (clients:%i)\n", client_socket, connection->getPeerIP().c_str(), clients.size(), item->getState(), num_clients);
-						    } else {
-										printf("error 2\n");
-								}
+                    item->setState(WorkItem::available);
+                    /*IMPROVE THIS.....*/
+                    item->setFds(nfds-1);
+                    clients[client_socket] = item;
+                    num_clients++;
+                    printf("New client arrived -> sock:%i ip:%s (size:%li) -> %i (clients:%i)\n", client_socket, connection->getPeerIP().c_str(), clients.size(), item->getState(), num_clients);
+                } else {
+                    printf("error 2\n");
+                }
 
-								continue;
-						}
+                continue;
+            }
 
-					  /* IMPROVE THIS..... NEW CLIENTS ARE WAITING FOR NEXT POOL */
-						if (fds[i].revents & POLLIN) {
-								item = (clients[fds[i].fd]);
-								connection = item->getStream();
-			          client_socket = fds[i].fd;
+            /* IMPROVE THIS..... NEW CLIENTS ARE WAITING FOR NEXT POOL */
+            if (fds[i].revents & POLLIN) {
+                item = (clients[fds[i].fd]);
+                connection = item->getStream();
+                client_socket = fds[i].fd;
 
-								message = new Message();
-								//printf("Extracting message -> sock:%i ip:%s\n", client_socket, connection->getPeerIP().c_str());
-								int err = Protocol::getMessage(connection, message);
-								if (err) {
-										num_clients--;
+                message = new Message();
+                //printf("Extracting message -> sock:%i ip:%s\n", client_socket, connection->getPeerIP().c_str());
+                int err = Protocol::getMessage(connection, message);
+                if (err) {
+                    num_clients--;
                     printf("client disconnected - %s (%i) - (clients:%i)\n", connection->getPeerIP().c_str(), connection->getSD(), num_clients);
-										close(fds[i].fd);
-								    fds[i].fd = -1;
+                    close(fds[i].fd);
+                    fds[i].fd = -1;
                     continue;
-						    }
+                }
 
-								item_message = new WorkItemMessage(connection, message);
+                item_message = new WorkItemMessage(connection, message);
 
-							  queue.add(item_message);
+                queue.add(item_message);
 
                 if (connection->getState() != TCPStream::connectionConnected) {
                     printf("client disconnected - %s (%i)\n", connection->getPeerIP().c_str(), connection->getSD());
-								    fds[i].fd = -1;
+                    fds[i].fd = -1;
                     continue;
                 }
-				   }
-				}
+            }
+        }
 
     }
 

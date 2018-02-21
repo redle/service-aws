@@ -51,31 +51,11 @@ MessageHandler::MessageHandler() {
    m_awsClient = AwsClient::instance();
    //m_database = new DynamoDB(m_awsClient, true);
    m_database = DynamoDB::instance(m_awsClient, true);
+   m_encrypt = KMSEncrypt::instance();
+   m_encryption = true;
 }
 
 MessageHandler::~MessageHandler() {
-}
-
-Message* MessageHandler::getMessage() {
-#if 0
-    int err;
-    Message* message = new Message();
-    Protocol* protocol = new Protocol(m_stream);
-
-    err = protocol->getMessage();
-    if (err) {
-        return NULL;
-    }
-
-    printf("type: %i\n", protocol->getData().getType());
-    printf("key: %s\n", protocol->getData().getKey().c_str());
-    printf("value: %s\n", protocol->getData().getValue().c_str());
-
-    message->setType(protocol->getData().getType());
-    message->setKey(protocol->getData().getKey());
-    message->setValue(protocol->getData().getValue());
-#endif
-    return 0;
 }
 
 void MessageHandler::setMessage(Message*& message) {
@@ -83,38 +63,78 @@ void MessageHandler::setMessage(Message*& message) {
 }
 
 void MessageHandler::setStream(TCPStream* stream) {
-	  m_stream = stream;
+    m_stream = stream;
 }
 
 int MessageHandler::handler() {
     int err = 0;
 
-    if (m_message->getState() == Message::state_t::pending) {
-        m_message->setState(Message::state_t::processing);
+    switch (m_message->getState()) {
+        case Message::state_t::pending: {
 
-        if (m_message->getType() == msg_type::set) {
-            m_queue_item = m_database->putItem(m_message);
-        } else if (m_message->getType() == msg_type::get) {
-            m_queue_item = m_database->getItem(m_message);
+            if (m_message->getType() == msg_type::set) {
+                if (m_encryption) {
+                    m_encrypt_task = m_encrypt->encrypt(m_message->getValue());
+                    m_message->setState(Message::state_t::encrypting);
+                } else {
+                    m_db_task = m_database->putItem(m_message);
+                    m_message->setState(Message::state_t::databasing);
+                }
+            } else if (m_message->getType() == msg_type::get) {
+                m_db_task = m_database->getItem(m_message);
+                m_message->setState(Message::state_t::databasing);
+            }
         }
+        break;
 
-    } else if (m_message->getState() == Message::state_t::processing) {
-        DatabaseTask::state_t state;
+        case Message::state_t::encrypting: {
+            //printf("Message -> encrypting (%s)\n", m_message->getKey().c_str());
 
-        state = m_database->consume(m_message, m_queue_item);
+            EncryptTask::state_t state = m_encrypt->handleTask(m_message, m_encrypt_task);
 
-        if (state == DatabaseTask::state_t::ready) {
-				    Protocol::response(m_stream, m_message);
-	          m_message->setState(Message::state_t::ready);
-            //printf("Message -> ready - key: %s\n", m_message->getKey().c_str());
-            #if 0
-            printf("type: %i\n", m_message->getType());
-            printf("key: %s\n", m_message->getKey().c_str());
-            printf("value: %s\n", m_message->getValue().c_str());
-            #endif
+            if (state != EncryptTask::state_t::ready)
+                break;
+
+            switch (m_message->getType()) {
+                case msg_type::set:
+                    m_message->setState(Message::state_t::databasing);
+                    m_db_task = m_database->putItem(m_message);
+                break;
+
+                case msg_type::get:
+                    Protocol::response(m_stream, m_message);
+                    m_message->setState(Message::state_t::ready);
+                break;
+
+                case msg_type::unknown:
+                default:
+                break;
+            }
         }
+        break;
+
+        case Message::state_t::databasing: {
+            //printf("Message -> databasing (%s)\n", m_message->getKey().c_str());
+
+            DatabaseTask::state_t state = m_database->handleTask(m_message, m_db_task);
+            if (state != DatabaseTask::state_t::ready)
+                break;
+
+            if ((m_message->getType() == msg_type::set) || (m_message->getError() == msg_error::not_found)) {
+                Protocol::response(m_stream, m_message);
+                m_message->setState(Message::state_t::ready);
+            } else {
+                m_encrypt_task = m_encrypt->decrypt(m_message->getValue());
+                m_message->setState(Message::state_t::encrypting);
+            }
+        }
+        break;
+
+        case Message::state_t::ready:
+        default:
+        break;
     }
 
-	  return err;
+    return err;
 }
 

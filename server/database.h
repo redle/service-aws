@@ -16,13 +16,6 @@
 #include <memory>
 #include <chrono>
 
-#include <aws/kms/KMSClient.h>
-#include <aws/kms/model/EncryptRequest.h>
-#include <aws/kms/model/EncryptResult.h>
-#include <aws/kms/model/DecryptRequest.h>
-#include <aws/kms/model/DecryptResult.h>
-#include <aws/kms/KMSErrors.h>
-
 class Database;
 class DynamoDB;
 class FooDB;
@@ -34,10 +27,10 @@ class DatabaseTask;
 class DatabaseTask
 {
   public:
-		enum type_t {
-				put = 0,
-				get = 1
-		};
+   enum type_t {
+     put = 0,
+     get = 1
+   };
     enum state_t {
         wait = 0,
         ready = 1,
@@ -47,16 +40,15 @@ class DatabaseTask
     DatabaseTask() {}
     ~DatabaseTask() {}
 
-		type_t getType() { return m_type; }
-		void setType(type_t type) { m_type = type; }
+    type_t getType() { return m_type; }
+    void setType(type_t type) { m_type = type; }
 
     Aws::DynamoDB::Model::PutItemOutcomeCallable putItemOutcome;
-		Aws::DynamoDB::Model::GetItemOutcomeCallable getItemOutcome;
+    Aws::DynamoDB::Model::GetItemOutcomeCallable getItemOutcome;
 
-	private:
-		type_t m_type;
-		Message* m_message;
-
+  private:
+    type_t m_type;
+    Message* m_message;
 };
 
 class Database
@@ -65,7 +57,7 @@ class Database
     virtual ~Database() {};
     virtual DatabaseTask* getItem(Message*& ) = 0;
     virtual DatabaseTask* putItem(Message*& ) = 0;
-    virtual DatabaseTask::state_t consume(Message*& message, DatabaseTask*&) = 0;
+    virtual DatabaseTask::state_t handleTask(Message*& message, DatabaseTask*&) = 0;
 };
 
 class FooDB: public Database
@@ -75,36 +67,25 @@ class FooDB: public Database
     DatabaseTask* getItem(Message*& message);
     DatabaseTask* putItem(Message*& message);
     void setHandler(MessageHandler* handler) {};
-    DatabaseTask::state_t consume(DatabaseTask*& item) { return DatabaseTask::state_t::ready; };
+    DatabaseTask::state_t handleTask(DatabaseTask*& task) { return DatabaseTask::state_t::ready; };
 };
 
 class DynamoDB: public Database
 {
     AwsClient *m_awsClient;
     static std::shared_ptr<Aws::DynamoDB::DynamoDBClient> m_dynamoClient;
-    Aws::KMS::KMSClient* m_kmsClient;
     std::string m_table;
-    std::string m_keyid;
-
     Message* m_message;
-
     bool m_async;
-
-    pthread_mutex_t  m_mutex;
     static DynamoDB* m_instance;
   public:
     DynamoDB(AwsClient* , bool );
     virtual ~DynamoDB();
 
-		void encrypt(std::string plainText, Aws::Utils::ByteBuffer& cipherText);
-		void decrypt(Aws::Utils::ByteBuffer cipherText, std::string& message);
-
     DatabaseTask* getItem(Message*& message);
     DatabaseTask* putItem(Message*& message);
-    virtual int putItemHandle(Message*& message);
 
-    DatabaseTask::state_t consume(Message*& message, DatabaseTask*&);
+    DatabaseTask::state_t handleTask(Message*& message, DatabaseTask*&);
     static DynamoDB* instance(AwsClient* , bool );
-
 };
 #endif

@@ -14,16 +14,18 @@ class MessageHandler;
 #include "tcpacceptor.h"
 #include "aws_client.h"
 #include "database.h"
+#include "encrypt.h"
 
 extern int DEBUG_MODE;
 
 class Message {
   public:
-		enum state_t {
-				pending = 0,
-				processing = 1,
-				ready = 2
-		};
+    enum state_t {
+        pending = 0,
+        databasing = 1,
+        encrypting = 2,
+        ready = 3
+    };
 
   private:
     msg_type m_type;
@@ -54,8 +56,11 @@ class MessageHandler {
     TCPStream* m_stream;
     Database* m_database;
     Message* m_message;
-    DatabaseTask* m_queue_item;
+    DatabaseTask* m_db_task;
+    EncryptTask* m_encrypt_task;
     AwsClient* m_awsClient;
+    Encrypt* m_encrypt;
+    bool m_encryption;
   public:
     MessageHandler();
     MessageHandler(Database* );
@@ -63,7 +68,8 @@ class MessageHandler {
     void setStream(TCPStream* );
     int handler();
     int getSD() { return m_stream->getSD(); };
-    Message* getMessage();
+    Message* getMessage() { return m_message; };
     void setMessage(Message*& message);
+    void setEncryption(bool encryption) { m_encryption = encryption; };
 };
 #endif
